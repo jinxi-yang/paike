@@ -3,100 +3,22 @@
 """
 from flask import Blueprint, jsonify, request
 from datetime import date, datetime, timedelta
-from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo
+from models import db, ClassSchedule, Class, MonthlyPlan
 import requests
 
 schedule_bp = Blueprint('schedule', __name__)
-
-
-def _month_range(year, month):
-    start_date = date(year, month, 1)
-    if month == 12:
-        end_date = date(year + 1, 1, 1)
-    else:
-        end_date = date(year, month + 1, 1)
-    return start_date, end_date
-
-
-def _guess_suggestion(reason):
-    text = reason or ''
-    if '节假日' in text:
-        return '建议顺延到下一周周六/周日'
-    if '请假' in text or '不可用' in text:
-        return '建议改用同课题备选讲师，或顺延一周'
-    if '班主任' in text:
-        return '建议调整到班主任可到场的下一周末'
-    if '撞课' in text:
-        return '建议同周内错开班级，或调整到下一周'
-    if '日期被排除' in text:
-        return '建议改到最近可用周末'
-    return '建议人工调整时间或师资后再发布'
-
-
-def _build_publish_checklist(year, month):
-    start_date, end_date = _month_range(year, month)
-    month_schedules = ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date
-    ).all()
-
-    unresolved = []
-    pending = []
-    resolved = []
-
-    for s in month_schedules:
-        if s.status == 'conflict':
-            reason = s.notes or '冲突原因未记录'
-            same_day_count = ClassSchedule.query.filter(
-                ClassSchedule.scheduled_date == s.scheduled_date
-            ).count()
-            unresolved.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None,
-                'reason': reason,
-                'suggestion': _guess_suggestion(reason),
-                'impact_scope': f'影响日期 {s.scheduled_date.isoformat()}，同日排课 {max(same_day_count - 1, 0)} 条'
-            })
-        elif s.status in ['planning', 'scheduled']:
-            pending.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None,
-                'reason': '未确认排课',
-                'suggestion': '建议发布前确认师资和时间',
-                'impact_scope': '仅影响当前班级'
-            })
-        else:
-            resolved.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None
-            })
-
-    return {
-        'resolved': resolved,
-        'pending': pending,
-        'unresolved': unresolved
-    }
 
 # ==================== 节假日相关 ====================
 
 import os
 import json
 
-# 加载本地节假日缓存（使用相对于本文件的路径，保证从 backend 目录正确加载）
+# 加载本地节假日缓存
 _local_holiday_data = {}
 try:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    # holidays_2026.json 存放在 backend 根目录，而本文件位于 backend/routes
-    local_path = os.path.join(os.path.dirname(base_dir), 'holidays_2026.json')
-    with open(local_path, 'r', encoding='utf-8') as f:
+    with open('holidays_2026.json', 'r', encoding='utf-8') as f:
         _local_holiday_data = json.load(f)
-    print(f"Loaded {len(_local_holiday_data)} holiday records from local file: {local_path}")
+    print(f"Loaded {len(_local_holiday_data)} holiday records from local file")
 except Exception as e:
     print(f"Warning: Could not load local holiday file: {e}")
 
@@ -107,34 +29,21 @@ def is_holiday(check_date):
     检查某日期是否为节假日
     优先使用本地 holidays_2026.json
     其次使用 timor.tech API
-    最后兜底逻辑：默认为工作日（排课日）
+    最后兜底逻辑：周六日休息
     """
     if isinstance(check_date, str):
         check_date = date.fromisoformat(check_date)
     
     date_str = check_date.isoformat()
-    mm_dd = date_str[5:] # MM-DD
     
     # 1. 检查内存缓存
     if date_str in _holiday_cache:
         return _holiday_cache[date_str]
     
     # 2. 检查本地文件缓存 (优先)
-    # 尝试 YYYY-MM-DD
     if date_str in _local_holiday_data:
         record = _local_holiday_data[date_str]
-        # treat official holidays and any record that represents a make-up/adjusted workday as restricted
-        is_makeup = ('after' in record) or ('补班' in (record.get('name') or '')) or record.get('workday', False)
-        is_hol = bool(record.get('holiday', False) or is_makeup)
-        _holiday_cache[date_str] = is_hol
-        return is_hol
-
-    # 尝试 MM-DD (holidays_2026.json 格式)
-    if mm_dd in _local_holiday_data:
-        record = _local_holiday_data[mm_dd]
-        is_makeup = ('after' in record) or ('补班' in (record.get('name') or '')) or record.get('workday', False)
-        is_hol = bool(record.get('holiday', False) or is_makeup)
-        # 注意：这里我们存入缓存的是完整日期
+        is_hol = record.get('holiday', False)
         _holiday_cache[date_str] = is_hol
         return is_hol
 
@@ -152,13 +61,11 @@ def is_holiday(check_date):
         # print(f"节假日API调用失败: {e}") # 减少日志干扰
         pass
     
-    # 4. 兜底逻辑
-    # 商学院排课主要在周六日，所以默认这些天不是节假日（除非API已明确说是）
-    # 只有API或本地文件明确说是holiday: true，才是节假日
-    # 否则默认都是工作日（可以排课）
-    is_hol = False
-    _holiday_cache[date_str] = is_hol
-    return is_hol
+    # 4. 兜底逻辑：周六日为节假日
+    # weekday(): 0-4=Mon-Fri, 5=Sat, 6=Sun
+    is_weekend = check_date.weekday() >= 5
+    _holiday_cache[date_str] = is_weekend
+    return is_weekend
 
 def find_next_available_saturday(start_date):
     """找到下一个周六"""
@@ -401,78 +308,40 @@ def unmerge_class(schedule_id):
 
 # ==================== 月度计划发布 ====================
 
-@schedule_bp.route('/publish-checklist', methods=['GET'])
-def publish_checklist():
-    """发布前冲突处置清单"""
-    year = request.args.get('year', type=int)
-    month = request.args.get('month', type=int)
-    if not year or not month:
-        return jsonify({'error': 'Missing year/month'}), 400
-
-    checklist = _build_publish_checklist(year, month)
-    return jsonify({
-        'year': year,
-        'month': month,
-        'checklist': checklist
-    })
-
-
 @schedule_bp.route('/publish', methods=['POST'])
 def publish_month():
     """发布月度计划"""
     data = request.get_json()
     year = data.get('year')
     month = data.get('month')
-    force_publish = bool(data.get('force_publish', False))
-    force_note = (data.get('force_note') or '').strip()
-
-    checklist = _build_publish_checklist(year, month)
-    unresolved = checklist.get('unresolved', [])
-    if unresolved and not force_publish:
-        return jsonify({
-            'error': '存在无法自动解决的冲突，默认阻止发布',
-            'code': 'UNRESOLVED_CONFLICTS',
-            'checklist': checklist
-        }), 409
-
-    if force_publish and unresolved and not force_note:
-        return jsonify({
-            'error': '强制发布必须填写备注',
-            'code': 'FORCE_NOTE_REQUIRED'
-        }), 400
-
-    # find or create monthly plan
+    
+    # 查找或创建月度计划
     plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
     if not plan:
         plan = MonthlyPlan(year=year, month=month)
         db.session.add(plan)
-
+    
     plan.status = 'published'
     plan.published_at = datetime.now()
-
-    # update month schedules
-    start_date, end_date = _month_range(year, month)
-
+    
+    # 更新该月所有课程状态
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    
     ClassSchedule.query.filter(
         ClassSchedule.scheduled_date >= start_date,
         ClassSchedule.scheduled_date < end_date,
         ClassSchedule.status == 'scheduled'
     ).update({'status': 'confirmed'}, synchronize_session=False)
-
-    if force_publish and unresolved:
-        for item in unresolved:
-            sid = item.get('schedule_id')
-            schedule = ClassSchedule.query.get(sid)
-            if schedule:
-                schedule.notes = f"{schedule.notes or ''}\n[强制发布备注] {force_note}".strip()
-
+    
     db.session.commit()
-
+    
     return jsonify({
         'message': f'{year}年{month}月计划已发布',
-        'plan': plan.to_dict(),
-        'forced': force_publish,
-        'forced_conflict_count': len(unresolved) if force_publish else 0
+        'plan': plan.to_dict()
     })
 
 
@@ -535,7 +404,7 @@ def generate_schedule():
         ClassSchedule.query.filter(
             ClassSchedule.scheduled_date >= start_date,
             ClassSchedule.scheduled_date < end_date,
-            ClassSchedule.status.in_(['scheduled', 'planning'])
+            ClassSchedule.status == 'scheduled'
         ).delete()
         
         # 2. 获取所有活跃班级
@@ -556,15 +425,11 @@ def generate_schedule():
             
         # 3. 为每个班级排课
         skipped_classes_info = []
-        conflict_mode = data.get('conflict_mode', 'postpone') # 'postpone' (顺延) or 'mark' (标记冲突)
 
         for cls in active_classes:
             # 找到该班级下一个未上的课题
-            # 获取已排的最大sequence (仅查找本月之前的)
-            last_schedule = ClassSchedule.query.filter(
-                ClassSchedule.class_id == cls.id,
-                ClassSchedule.scheduled_date < start_date
-            ).order_by(ClassSchedule.topic_id.desc()).first()
+            # 获取已排的最大sequence
+            last_schedule = ClassSchedule.query.filter_by(class_id=cls.id).order_by(ClassSchedule.topic_id.desc()).first()
             
             # 获取所有topic按sequence排序
             # 注意: 这里假设topic.id和sequence有对应关系，严谨应查询Topic表
@@ -587,201 +452,75 @@ def generate_schedule():
             if not next_topic:
                 continue # 该班级已结课
                 
-            if not next_topic:
-                continue # 该班级已结课
-                
             # 找到合适的 Combo (Teacher)
-            # 获取该课题下的所有可用Combo，按ID倒序（最新）
-            combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id).order_by(TeacherCourseCombo.id.desc()).limit(2).all()
-            
-            combo1 = None
-            combo2 = None
-            teacher1_name = None
-            teacher2_name = None
-            
-            if combos:
-                if len(combos) >= 2:
-                    # 有两个不同的组合，优先排不同的
-                    combo1 = combos[0]
-                    combo2 = combos[1]
-                else:
-                    # 只有一个组合，两天都排同一个
-                    combo1 = combos[0]
-                    combo2 = combos[0]
-                    
-            teacher1_name = combo1.teacher.name if combo1 and combo1.teacher else None
-            teacher2_name = combo2.teacher.name if combo2 and combo2.teacher else None
+            combo = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id).order_by(TeacherCourseCombo.priority.desc()).first()
+            teacher_name = combo.teacher.name if combo and combo.teacher else None
             
             # 4. 寻找合适的档期 (从可用周六中找)
             assigned_date = None
             fail_reason = "无可用档期"
-            final_status = 'scheduled'
-            final_notes = 'AI自动排课'
             
             for sat in saturdays:
                 sun = sat + timedelta(days=1)
                 sat_str = sat.isoformat()
                 sun_str = sun.isoformat()
                 
-                current_conflict_reason = None
-                
                 # A. 检查节假日 (2天都不能是节假日)
                 if is_holiday(sat) or is_holiday(sun):
-                    current_conflict_reason = "节假日冲突"
+                    fail_reason = "节假日冲突"
+                    continue
                     
                 # B. 检查系统硬约束 (blocked_dates)
-                if not current_conflict_reason: 
-                    blocked = constraints.get('blocked_dates', [])
-                    for b in blocked:
-                        b_date = b.get('date') if isinstance(b, dict) else b
-                        if b_date == sat_str or b_date == sun_str:
-                            current_conflict_reason = f"日期被排除 ({b.get('reason', '人工约束')})" if isinstance(b, dict) else "日期被排除"
-                            break
+                blocked = constraints.get('blocked_dates', [])
+                is_blocked = False
+                for b in blocked:
+                    # b可能只有日期，或{date:..., reason:...}
+                    b_date = b.get('date') if isinstance(b, dict) else b
+                    if b_date == sat_str or b_date == sun_str:
+                        is_blocked = True
+                        break
+                if is_blocked:
+                    fail_reason = "日期被人工/AI约束排除"
+                    continue
                     
-                # C. 检查班主任档期 (Inherent Check)
-                if not current_conflict_reason and cls.homeroom_id:
-                    # 查找该班主任在当天的其他排课
-                    # 注意：ClassSchedule 本身没有 homeroom_id，需关联 Class 表
-                    # Join Class to filter by homeroom_id
-                    homeroom_conflict = ClassSchedule.query.join(Class).filter(
-                        Class.homeroom_id == cls.homeroom_id,
-                        ClassSchedule.scheduled_date == sat
-                    ).first()
-                    
-                    if homeroom_conflict:
-                        current_conflict_reason = f"周六: 班主任撞课 ({homeroom_conflict.class_.name})"
-
-                    # NEW: Check homeroom_unavailable constraint (AI Constraints)
-                    if not current_conflict_reason:
-                        homeroom_unavailable = constraints.get('homeroom_unavailable', [])
-                        if cls.homeroom: # Ensure homeroom loaded
-                            hrm_name = cls.homeroom.name
-                            # Determine week range for candidate Saturday (Mon..Sun)
-                            week_monday = sat - timedelta(days=5)
-                            week_sunday = week_monday + timedelta(days=6)
-
-                            for u in homeroom_unavailable:
-                                if u.get('homeroom_name') != hrm_name:
-                                    continue
-
-                                # u['dates'] may be a list of ISO dates or date ranges; handle common formats
-                                dates = u.get('dates', [])
-                                parsed = []
-                                for item in dates:
-                                    if isinstance(item, str):
-                                        # single date
-                                        try:
-                                            parsed.append(date.fromisoformat(item))
-                                        except Exception:
-                                            # try to parse ranges like '2026-04-13~2026-04-17'
-                                            if '~' in item:
-                                                parts = item.split('~')
-                                                try:
-                                                    d1 = date.fromisoformat(parts[0])
-                                                    d2 = date.fromisoformat(parts[1])
-                                                    # expand range (inclusive)
-                                                    d = d1
-                                                    while d <= d2:
-                                                        parsed.append(d)
-                                                        d = d + timedelta(days=1)
-                                                except Exception:
-                                                    pass
-                                    elif isinstance(item, dict):
-                                        # permissive: {from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'}
-                                        f = item.get('from') or item.get('start')
-                                        t = item.get('to') or item.get('end')
-                                        try:
-                                            d1 = date.fromisoformat(f)
-                                            d2 = date.fromisoformat(t)
-                                            d = d1
-                                            while d <= d2:
-                                                parsed.append(d)
-                                                d = d + timedelta(days=1)
-                                        except Exception:
-                                            pass
-
-                                # If any parsed date falls within the candidate week, block this weekend
-                                for pd in parsed:
-                                    if week_monday <= pd <= week_sunday:
-                                        current_conflict_reason = f"周末: 班主任 {hrm_name} 在同一周请假/不可用"
-                                        break
-                                if current_conflict_reason:
-                                    break
-
-                # D. 检查讲师档期 (分别检查Day1和Day2)
-                unavailable = constraints.get('teacher_unavailable', [])
-                
-                # Day 1 Teacher Check
-                if not current_conflict_reason and teacher1_name:
+                # C. 检查讲师档期 (teacher_unavailable)
+                if teacher_name:
+                    unavailable = constraints.get('teacher_unavailable', [])
+                    is_teacher_busy = False
                     for u in unavailable:
-                        if u['teacher_name'] == teacher1_name and sat_str in u['dates']:
-                            current_conflict_reason = f"周六: 讲师 {teacher1_name} 请假"
-                            break
-                            
-                # Day 2 Teacher Check
-                if not current_conflict_reason and teacher2_name:
-                    for u in unavailable:
-                        if u['teacher_name'] == teacher2_name and sun_str in u['dates']:
-                            current_conflict_reason = f"周日: 讲师 {teacher2_name} 请假"
-                            break
-                
-                # D. 冲突检查：同一个讲师同一天不能排两个班 
-                # Day 1 Check
-                if not current_conflict_reason and combo1:
-                    conflict_schedule = ClassSchedule.query.join(TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id).filter(
-                        ClassSchedule.scheduled_date == sat,
-                        TeacherCourseCombo.teacher_id == combo1.teacher_id
-                    ).first()
-                    # 还要检查作为Day2被占用的情况 (combo_id_2) -- 需 join combo_2 logic，较复杂，暂只查combo_id
-                    # 严谨做法：Check if teacher1 is busy on Sat in ANY schedule (as Day1 or Day2)
-                    # 简化：只查 scheduled_date == sat 的 combo_id (Day1) 和 scheduled_date == sat-1 的 combo_id_2 (Day2)
-                    # 这里的 conflict_schedule 只查了 Day1 撞 Day1
-                    if conflict_schedule:
-                        current_conflict_reason = f"周六: 讲师 {teacher1_name} 撞课 ({conflict_schedule.class_.name})"
-
-                # Day 2 Check (Sun)
-                # 检查有没有其他课在周日上 (即 start_date == Sun, 不太可能，都是周六开课)
-                # 或者 start_date == Sat 的课，其 Day2 (Sun) 用了这个老师
-                if not current_conflict_reason and combo2:
-                    # 查找同日期的其他排课 (都是周六开课)
-                    # 检查他们的 combo_id_2 是否占用了 teacher2
-                    # Aliasing needed for complex join, using simplified logic:
-                    # Iterate all schedules on this Sat, check their combo_2's teacher
-                    schedules_on_sat = ClassSchedule.query.filter(ClassSchedule.scheduled_date == sat).all()
-                    for existing_s in schedules_on_sat:
-                        if existing_s.combo_2 and existing_s.combo_2.teacher_id == combo2.teacher_id:
-                            current_conflict_reason = f"周日: 讲师 {teacher2_name} 撞课 ({existing_s.class_.name})"
-                            break
-
-                # --- 决策逻辑 ---
-                if current_conflict_reason:
-                    if conflict_mode == 'mark':
-                        # 允许冲突：直接使用此日期，并标记
-                        assigned_date = sat
-                        final_status = 'conflict'
-                        final_notes = current_conflict_reason
-                        break # 找到了（带冲突的）位置
-                    else:
-                        # 顺延模式：记录失败原因，继续找下一个日期
-                        fail_reason = current_conflict_reason
+                        if u['teacher_name'] == teacher_name:
+                            if sat_str in u['dates'] or sun_str in u['dates']:
+                                is_teacher_busy = True
+                                break
+                    if is_teacher_busy:
+                        fail_reason = f"讲师 {teacher_name} 请假"
                         continue
-                else:
-                    # 无冲突，完美
-                    assigned_date = sat
-                    final_status = 'scheduled'
-                    final_notes = 'AI自动排课'
-                    break
+                
+                # D. 简单的冲突检查：同一个班级一个月只能排一次(已隐含在循环外)
+                # 同一个讲师同一天不能排两个班 (需要查询已排的schedule)
+                if combo:
+                    conflict_schedule = ClassSchedule.query.join(TeacherCourseCombo).filter(
+                        ClassSchedule.scheduled_date == sat,
+                        TeacherCourseCombo.teacher_id == combo.teacher_id
+                    ).first()
+                    if conflict_schedule:
+                        # 冲突了
+                        fail_reason = f"讲师 {teacher_name} 当天已有课 ({conflict_schedule.class_.name})"
+                        continue
+                
+                # 找到可用日期
+                assigned_date = sat
+                break
             
             if assigned_date:
                 new_schedule = ClassSchedule(
                     class_id=cls.id,
                     topic_id=next_topic.id,
-                    combo_id=combo1.id if combo1 else None,
-                    combo_id_2=combo2.id if combo2 else None,
+                    combo_id=combo.id if combo else None,
                     scheduled_date=assigned_date,
                     week_number=0, # 暂不计算
-                    status=final_status,
-                    notes=final_notes
+                    status='scheduled',
+                    notes='AI自动排课'
                 )
                 db.session.add(new_schedule)
                 generated_count += 1

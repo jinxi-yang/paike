@@ -292,7 +292,7 @@
                 <div class="p-4 border-t flex gap-2">
                     <input id="new-homeroom-name" placeholder="班主任姓名 class="flex-1 text-sm p-2 border rounded-lg">
                     <button onclick="addHomeroom()"
-                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">添加</button>
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
                 </div>
             </div>
             <!-- 璁插笀绠＄悊 -->
@@ -304,7 +304,7 @@
                 <div class="p-4 border-t flex gap-2">
                     <input id="new-teacher-name" placeholder="讲师姓名" class="flex-1 text-sm p-2 border rounded-lg">
                     <button onclick="addTeacher()"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">添加</button>
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
                 </div>
             </div>
             <!-- 课程管理 -->
@@ -326,7 +326,7 @@
                     <div class="flex gap-2">
                         <input id="new-course-name" placeholder="课程名称" class="flex-1 text-sm p-2 border rounded-lg">
                         <button onclick="addCourse()"
-                            class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold">添加</button>
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
                     </div>
                 </div>
             </div>
@@ -1377,11 +1377,6 @@
 
         function renderMonthView() {
             const container = document.getElementById('schedule-container');
-            // guard against missing data
-            if (!cachedMonthData) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
-                return;
-            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
@@ -1457,20 +1452,26 @@
                         html += `
                             <tr class="${rowClass} ${isMergeMode ? 'cursor-pointer' : ''}" ${isMergeMode ? `onclick="toggleMergeSelect(${sch.id})"` : ''}>
                                 <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                    <div class="flex justify-between items-start">
-                                        <div>
-                                            <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
-                                            <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
-                                            <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
-                                            <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
-                                            ${conflictAssistHtml}
-                                        </div>
-                                        ${!isPast ? `
-                                        <div class="flex gap-2 ml-4">
-                                            <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded whitespace-nowrap">编辑</button>
-                                            <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded whitespace-nowrap">删除</button>
-                                        </div>` : ''}
-                                    </div>
+                                    <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
+                                    <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
+                                    <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
+                                    ${conflictAssistHtml}
+                                    ${!isPast ? `
+                                    <!-- 
+                                        操作按钮组容器
+                                        显示两个功能按钮：
+                                        1. 编辑按钮 - 点击打开调整日程的模态框，传入日程ID
+                                        2. 删除按钮 - 点击删除对应的日程项目，传入日程ID
+                                        
+                                        两个按钮都使用 event.stopPropagation() 来阻止事件冒泡
+                                        按钮样式采用 Tailwind CSS，包含悬停效果
+                                        删除按钮使用红色主题以示警告
+                                    -->
+                                    <div class="mt-2 flex gap-2">
+                                        <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded">编辑</button>
+                                        <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">删除</button>
+                                    </div>` : ''}
                                 </td>
                                 <td class="px-3 py-3 border-b border-slate-100 align-top">
                                     <div class="font-semibold text-slate-700">${day1Teacher}</div>
@@ -1499,7 +1500,7 @@
                 <div class="mt-8 flex justify-end items-center gap-4 px-2 pt-4 border-t border-slate-100">
                     <div class="text-xs text-slate-400">按月规划全学期排课进</div>
                     <div class="flex gap-3">
-                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">保存草稿</button>
+                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">淇濆瓨鑽夌</button>
                         <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
                     </div>
                 </div>
@@ -1511,10 +1512,6 @@
 
         function renderWeekView() {
             const container = document.getElementById('schedule-container');
-            if (!cachedMonthData) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
-                return;
-            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
@@ -2030,7 +2027,7 @@
             // }
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 正在思考并排课...' : '正在快速生成课表...');
+            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 正在思并排课...' : '正在快生成课?..');
 
             const resultBox = document.getElementById('constraints-result');
             resultBox.classList.add('hidden');
@@ -2149,7 +2146,7 @@
                             <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-bold">${h.name[0]}</div>
                             <span class="text-sm">${h.name}</span>
                         </div>
-                        <button onclick="deleteHomeroom(${h.id})" class="text-red-500 text-xs">删除</button>
+                        <button onclick="deleteHomeroom(${h.id})" class="text-red-500 text-xs">鍒犻櫎</button>
                     </div>
                 `).join('');
             } catch (e) { }
@@ -2179,7 +2176,7 @@
                             <span class="text-sm font-medium">${t.name}</span>
                             <span class="text-[10px] text-slate-500 ml-2">${t.title || ''}</span>
                         </div>
-                        <button onclick="deleteTeacher(${t.id})" class="text-red-500 text-xs">删除</button>
+                        <button onclick="deleteTeacher(${t.id})" class="text-red-500 text-xs">鍒犻櫎</button>
                     </div>
                 `).join('');
             } catch (e) { }

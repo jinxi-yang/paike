@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>北清商学院- 智能排课系统</title>
+    <title>北清商学院 - 智能排课系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -126,12 +126,12 @@
 </head>
 
 <body class="h-screen flex flex-col overflow-hidden">
-    <!-- API 閰嶇疆 -->
+    <!-- API 配置 -->
     <script>
         const API_BASE = 'http://localhost:5000/api';
     </script>
 
-    <!-- 椤堕儴瀵艰埅鏍?-->
+    <!-- 顶部导航栏 -->
     <header class="h-16 bg-white border-b flex items-center justify-between px-8 z-50 shrink-0">
         <div class="flex items-center gap-4">
             <div
@@ -139,7 +139,7 @@
                 <i data-lucide="graduation-cap"></i>
             </div>
             <div>
-                <h1 class="text-lg font-bold leading-tight">北清商学院<span class="text-blue-600">智能排课</span></h1>
+                <h1 class="text-lg font-bold leading-tight">北清商学院 <span class="text-blue-600">智能排课</span></h1>
                 <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Course Scheduling System</p>
             </div>
         </div>
@@ -150,7 +150,7 @@
             </button>
             <button onclick="switchTab('manage')" id="tab-manage"
                 class="px-6 flex items-center gap-2 text-slate-500 hover:text-blue-600 font-semibold transition-all">
-                <i data-lucide="settings" class="w-4 h-4"></i> 资源配置
+                <i data-lucide="settings" class="w-4 h-4"></i> 基础数据管理
             </button>
         </nav>
         <div class="flex items-center gap-4">
@@ -159,7 +159,7 @@
     </header>
 
     <main class="flex-1 overflow-hidden p-6 relative">
-        <!-- 视图丢：智能课程编?-->
+        <!-- 视图一：智能课程编排 -->
         <div id="view-scheduler" class="h-full flex flex-col gap-6">
             <!-- 顶部：培训班类型卡片 -->
             <div class="glass-card p-4 overflow-hidden">
@@ -174,7 +174,7 @@
                 <div id="training-types-container" class="flex gap-4 overflow-x-auto pb-4 scroll-hide">
                     <div class="flex items-center justify-center p-8 text-slate-400">
                         <span class="loading"></span>
-                        <span class="ml-2">加载?..</span>
+                        <span class="ml-2">加载中...</span>
                     </div>
                 </div>
             </div>
@@ -196,22 +196,22 @@
                                     <label
                                         class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border text-xs cursor-pointer hover:bg-slate-100">
                                         <div class="flex flex-col">
-                                            <span class="font-bold text-slate-700">策略</span>
-                                            <span class="text-[10px] text-slate-400">资源被占用或请假</span>
+                                            <span class="font-bold text-slate-700">冲突处理</span>
+                                            <span class="text-[10px] text-slate-400">资源被占用或请假时</span>
                                         </div>
                                         <select id="conflict-mode" class="bg-white border text-xs rounded p-1">
                                             <option value="postpone">自动顺延 (推荐)</option>
-                                            <option value="mark">保留位置并标</option>
+                                            <option value="mark">保留位置并标记</option>
                                         </select>
                                     </label>
                                 </div>
                             </section>
                             <section class="flex-1 flex flex-col pt-4">
                                 <label
-                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">定制提示</label>
+                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">定制提示词</label>
                                 <textarea id="prompt-input"
                                     class="w-full flex-1 mt-2 border rounded-xl p-3 text-xs focus:ring-2 focus:ring-blue-500 outline-none leading-relaxed min-h-[120px]"
-                                    placeholder="例如：5月北京有大型医疗峰会，医疗班那天不能上课。王芳老师3月1-22日请假了"></textarea>
+                                    placeholder="例如：3月25日北京有大型医疗峰会，医疗班那天不能上课。王芳老师3月21-22日请假了。"></textarea>
                             </section>
                             <button onclick="smartGenerateSchedule(event)" id="smart-generate-btn"
                                 class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 transition-all">
@@ -219,18 +219,18 @@
                             </button>
                             <div id="constraints-result"
                                 class="hidden bg-blue-50 p-3 rounded-xl border border-blue-200 text-xs space-y-2 mt-4">
-                                <div class="font-bold text-blue-700">AI 提取到的约束</div>
+                                <div class="font-bold text-blue-700">AI 提取到的约束：</div>
                                 <div id="constraints-content"></div>
                             </div>
                     </div>
                 </div>
 
-                <!-- 右侧：月度排课看?-->
+                <!-- 右侧：月度排课看板 -->
                 <div class="col-span-9 glass-card flex flex-col overflow-hidden">
                     <div class="p-4 border-b flex justify-between items-center bg-slate-50/50">
                         <div class="flex items-center gap-6">
                             <div class="flex items-center gap-3">
-                                <h4 id="month-display" class="font-bold text-slate-800 text-lg">2026年</h4>
+                                <h4 id="month-display" class="font-bold text-slate-800 text-lg">2026年3月</h4>
                                 <div class="flex bg-white border rounded-lg overflow-hidden shadow-sm">
                                     <button onclick="changeMonth(-1)" class="px-2 py-1 hover:bg-slate-50 border-r"><i
                                             data-lucide="chevron-left" class="w-4 h-4"></i></button>
@@ -239,14 +239,14 @@
                                 </div>
                             </div>
                             <div id="month-status"
-                                class="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-bold">预排中
+                                class="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-bold">草稿
                             </div>
-                            <!-- 瑙嗗浘鍒囨崲 -->
+                            <!-- 视图切换 -->
                             <div class="flex bg-slate-100 p-1 rounded-lg">
                                 <button onclick="switchViewMode('week')" id="view-mode-week"
-                                    class="px-3 py-1 rounded-md text-xs font-bold bg-white text-blue-600 shadow-sm transition-all">周度</button>
+                                    class="px-3 py-1 rounded-md text-xs font-bold bg-white text-blue-600 shadow-sm transition-all">周视图</button>
                                 <button onclick="switchViewMode('month')" id="view-mode-month"
-                                    class="px-3 py-1 rounded-md text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">月度</button>
+                                    class="px-3 py-1 rounded-md text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">月视图</button>
                             </div>
                         </div>
                         <div class="flex gap-4 items-center">
@@ -263,7 +263,7 @@
                             </div>
                             <div class="h-4 w-px bg-slate-200"></div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
-                                    class="w-2.5 h-2.5 bg-red-500 rounded-full"></span> 鍐茬獊</div>
+                                    class="w-2.5 h-2.5 bg-red-500 rounded-full"></span> 冲突</div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
                                     class="w-2.5 h-2.5 bg-green-500 rounded-full"></span> 已排</div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
@@ -281,21 +281,21 @@
             </div>
         </div>
 
-        <!-- 视图二：基础数据管理（简化版?-->
+        <!-- 视图二：基础数据管理（简化版） -->
         <div id="view-manage" class="hidden h-full grid grid-cols-3 gap-6">
-            <!-- 班主任管?-->
+            <!-- 班主任管理 -->
             <div class="glass-card flex flex-col overflow-hidden">
                 <div class="p-4 border-b bg-indigo-600 text-white">
-                    <h3 class="font-bold">班主任管</h3>
+                    <h3 class="font-bold">班主任管理</h3>
                 </div>
                 <div id="homerooms-list" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
                 <div class="p-4 border-t flex gap-2">
-                    <input id="new-homeroom-name" placeholder="班主任姓名 class="flex-1 text-sm p-2 border rounded-lg">
+                    <input id="new-homeroom-name" placeholder="班主任姓名" class="flex-1 text-sm p-2 border rounded-lg">
                     <button onclick="addHomeroom()"
                         class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">添加</button>
                 </div>
             </div>
-            <!-- 璁插笀绠＄悊 -->
+            <!-- 讲师管理 -->
             <div class="glass-card flex flex-col overflow-hidden">
                 <div class="p-4 border-b bg-blue-600 text-white">
                     <h3 class="font-bold">授课讲师管理</h3>
@@ -321,7 +321,7 @@
                 <div id="courses-list" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
                 <div class="p-4 border-t flex flex-col gap-2">
                     <select id="new-course-topic" class="w-full text-xs p-2 border rounded-lg">
-                        <option value="">-- 课程--</option>
+                        <option value="">-- 选择所属课题 --</option>
                     </select>
                     <div class="flex gap-2">
                         <input id="new-course-name" placeholder="课程名称" class="flex-1 text-sm p-2 border rounded-lg">
@@ -333,13 +333,13 @@
         </div>
     </main>
 
-    <!-- 培训班详情弹?-->
+    <!-- 培训班详情弹窗 -->
     <div id="training-detail-modal" class="modal-overlay" onclick="if(event.target==this) closeTrainingDetail()">
         <div class="modal-content glass-card w-[900px] max-h-[85vh] overflow-hidden flex flex-col">
             <div class="p-6 border-b bg-blue-600 text-white flex justify-between items-center">
                 <div>
-                    <h3 id="training-detail-title" class="text-xl font-bold">培训班详</h3>
-                    <p class="text-xs opacity-80 mt-1">管理班级和课题顺</p>
+                    <h3 id="training-detail-title" class="text-xl font-bold">培训班详情</h3>
+                    <p class="text-xs opacity-80 mt-1">管理班级和课题顺序</p>
                 </div>
                 <button onclick="closeTrainingDetail()" class="hover:bg-blue-700 p-2 rounded-full"><i data-lucide="x"
                         class="w-6 h-6"></i></button>
@@ -348,7 +348,7 @@
                 <!-- 课题列表 -->
                 <div>
                     <h4 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
-                        <i data-lucide="list-ordered" class="w-4 h-4 text-blue-600"></i> 课题列表（共8鑺傦級
+                        <i data-lucide="list-ordered" class="w-4 h-4 text-blue-600"></i> 课题列表（共8节）
                     </h4>
                     <div id="topics-list" class="space-y-2"></div>
                 </div>
@@ -379,33 +379,25 @@
                 <div>
                     <label class="text-xs font-bold">班级名称</label>
                     <input id="new-class-name" class="w-full text-sm p-2 border rounded-lg mt-1"
-                        placeholder="输入班级名称">
+                        placeholder="例如：领袖增长本科班 1期">
                 </div>
                 <div>
                     <label class="text-xs font-bold">首次上课日期</label>
                     <input id="new-class-date" type="date" class="w-full text-sm p-2 border rounded-lg mt-1">
                 </div>
                 <div>
-                    <label class="text-xs font-bold">班主</label>
+                    <label class="text-xs font-bold">班主任</label>
                     <select id="new-class-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 选择班主?--</option>
+                        <option value="">-- 选择班主任 --</option>
                     </select>
                 </div>
-                                <div id="class-precheck-panel" class="border rounded-lg bg-slate-50 p-3 hidden">
-                    <div class="flex items-center justify-between mb-2">
-                        <div class="text-xs font-bold text-slate-700">排班预检</div>
-                        <button type="button" onclick="runClassPrecheck()" class="text-[11px] text-blue-600 hover:underline">重新预检</button>
-                    </div>
-                    <div id="class-precheck-loading" class="hidden text-xs text-slate-500">正在预检，请稍候...</div>
-                    <div id="class-precheck-content" class="text-xs text-slate-700"></div>
-                </div>
-                <p class="text-[10px] text-slate-400">系统将自动按课纲生成课程预排建议</p>
+                <p class="text-[10px] text-slate-400">系统将自动按每4周一节课的规则生成8节课的预排课表</p>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3">
                 <button onclick="closeAddClassModal()"
                     class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
                 <button onclick="createClass()"
-                    class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">创建并生成课程</button>
+                    class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">创建并生成课表</button>
             </div>
         </div>
     </div>
@@ -444,16 +436,18 @@
                     <input id="adjust-new-date" type="date" class="w-full text-sm p-2 border rounded-lg mt-1">
                 </div>
                 <div>
-                    <label class="text-xs font-bold">选择教课组合</label>
+                    <label class="text-xs font-bold">选择教-课组合</label>
                     <select id="adjust-combo" class="w-full text-sm p-2 border rounded-lg mt-1">
                         <option value="">-- 选择组合 --</option>
                     </select>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="moveScheduleWeek('prev')"
-                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">上移一周</button>
+                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">←
+                        上一周</button>
                     <button onclick="moveScheduleWeek('next')"
-                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">下移一周</button>
+                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">下一周
+                        →</button>
                 </div>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3">
@@ -465,20 +459,20 @@
         </div>
     </div>
 
-    <!-- 鏂板鏁?课组合弹?-->
+    <!-- 新增教-课组合弹窗 -->
     <div id="add-combo-modal" class="modal-overlay" onclick="if(event.target==this) closeAddComboModal()">
         <div class="modal-content glass-card w-[500px]">
             <div class="p-4 border-b bg-green-600 text-white flex justify-between items-center">
-                <h3 class="font-bold">配置教课组合</h3>
+                <h3 class="font-bold">配置教-课组合</h3>
                 <button onclick="closeAddComboModal()" class="p-2 rounded-full hover:bg-green-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
             </div>
             <div class="p-4 space-y-4">
                 <input type="hidden" id="new-combo-topic-id">
                 <div>
-                    <label class="text-xs font-bold">选择教师</label>
+                    <label class="text-xs font-bold">选择讲师</label>
                     <select id="new-combo-teacher" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 选择教师 --</option>
+                        <option value="">-- 选择讲师 --</option>
                     </select>
                 </div>
                 <div>
@@ -497,72 +491,39 @@
         </div>
     </div>
 
-    <!-- 发布预览弹窗 -->
-    <div id="publish-preview-modal" class="modal-overlay" onclick="if(event.target==this) closePublishPreview()">
-        <div class="modal-content glass-card w-[980px] max-h-[85vh] overflow-hidden flex flex-col">
-            <div class="p-4 border-b bg-green-600 text-white flex justify-between items-center">
-                <div>
-                    <h3 class="font-bold">发布前预览</h3>
-                    <p class="text-xs opacity-80 mt-1">按周日日历格式预览本月排课</p>
-                </div>
-                <button onclick="closePublishPreview()" class="p-2 rounded-full hover:bg-green-700"><i data-lucide="x"
-                        class="w-5 h-5"></i></button>
-            </div>
-            <div id="publish-preview-content" class="flex-1 p-4 overflow-y-auto bg-slate-50"></div>
-            <div class="p-4 border-t bg-white flex items-end justify-between gap-3">
-                <div id="publish-force-controls" class="hidden flex-1">
-                    <label class="flex items-center gap-2 text-xs text-slate-700 mb-2">
-                        <input type="checkbox" id="force-publish-all" class="rounded border-slate-300">
-                        允许强制发布所有无法解决冲突的班级
-                    </label>
-                    <textarea id="force-publish-note" class="w-full border rounded-lg p-2 text-xs" rows="2"
-                        placeholder="强制发布备注（必填）"></textarea>
-                    <div id="publish-block-tip" class="text-[11px] text-red-600 mt-1 hidden"></div>
-                </div>
-                <button onclick="closePublishPreview()"
-                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
-                <button id="publish-confirm-btn" onclick="executePublishMonth()"
-                    class="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold">确认发布</button>
-            </div>
-        </div>
-    </div>
-
     <script>
-        // ==================== 鍏ㄥ眬鐘舵€?====================
+        // ==================== 全局状态 ====================
         let currentYear = 2026;
         let currentMonth = 3;
         let currentTrainingTypeId = null;
         let currentClassId = null;
         let currentScheduleId = null;
-        // 合班模式状?
+        // 合班模式状态
         let isMergeMode = false;
         let selectedMergeIds = new Set();
-        let publishChecklistState = { unresolved: [], pending: [], resolved: [] };
-        let classPrecheckState = null;
 
-        // ==================== 初始?====================
+        // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
             checkConnection();
             loadTrainingTypes();
             loadMonthSchedule();
-            initClassPrecheckEvents();
         });
 
         async function checkConnection() {
             try {
                 const resp = await fetch(`${API_BASE}/health`);
                 if (resp.ok) {
-                    document.getElementById('connection-status').innerHTML = '<span class="text-green-600">·已连接</span>';
+                    document.getElementById('connection-status').innerHTML = '<span class="text-green-600">● 已连接</span>';
                 } else {
-                    document.getElementById('connection-status').innerHTML = '<span class="text-red-600">·连接失败</span>';
+                    document.getElementById('connection-status').innerHTML = '<span class="text-red-600">● 连接失败</span>';
                 }
             } catch (e) {
-                document.getElementById('connection-status').innerHTML = '<span class="text-red-600">·后端未启动</span>';
+                document.getElementById('connection-status').innerHTML = '<span class="text-red-600">● 后端未启动</span>';
             }
         }
 
-        // ==================== 瑙嗗浘鍒囨崲 ====================
+        // ==================== 视图切换 ====================
         function switchTab(tab) {
             document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden'));
             document.getElementById(`view-${tab}`).classList.remove('hidden');
@@ -579,13 +540,13 @@
             }
         }
 
-        // ==================== 培训班类?====================
+        // ==================== 培训班类型 ====================
         async function loadTrainingTypes() {
             try {
                 const resp = await fetch(`${API_BASE}/training-types`);
                 const types = await resp.json();
                 renderTrainingTypes(types);
-                document.getElementById('training-type-count').textContent = `共${types.length} 种培训班`;
+                document.getElementById('training-type-count').textContent = `共 ${types.length} 种培训班`;
             } catch (e) {
                 document.getElementById('training-types-container').innerHTML = '<div class="text-red-500 p-4">加载失败，请检查后端服务</div>';
             }
@@ -600,8 +561,8 @@
                     </div>
                     <p class="text-[10px] text-slate-500 mb-2">${t.description || ''}</p>
                     <div class="flex justify-between text-[9px] text-slate-400">
-                        <span>8个课</span>
-                        <span class="text-blue-600 font-bold">点击管理</span>
+                        <span>8个课题</span>
+                        <span class="text-blue-600 font-bold">点击管理 →</span>
                     </div>
                 </div>
             `).join('');
@@ -640,11 +601,11 @@
                             </div>
                         </div>
                         <button onclick="openAddComboModal(${t.id})" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1">
-                            <i data-lucide="plus" class="w-3 h-3"></i> 配置课程组合
+                            <i data-lucide="plus" class="w-3 h-3"></i> 配置教-课
                         </button>
                     </div>
                     
-                    <!-- 课程组合列表 -->
+                    <!-- 教-课组合列表 -->
                     <div class="space-y-2 pl-11">
                         ${(t.combos || []).length > 0 ? (t.combos || []).map(c => `
                             <div class="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-sm hover:border-blue-200 transition-all group">
@@ -657,7 +618,7 @@
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
                             </div>
-                        `).join('') : '<div class="text-[10px] text-slate-400 italic">暂无课程组合配置</div>'}
+                        `).join('') : '<div class="text-[10px] text-slate-400 italic">暂无教-课组合配置</div>'}
                     </div>
                 </div>
             `).join('');
@@ -701,7 +662,7 @@
                 const resp = await fetch(`${API_BASE}/homerooms`);
                 const homerooms = await resp.json();
                 const select = document.getElementById('new-class-homeroom');
-                select.innerHTML = '<option value="">-- 选择班主任--</option>' +
+                select.innerHTML = '<option value="">-- 选择班主任 --</option>' +
                     homerooms.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
             } catch (e) { }
 
@@ -712,134 +673,11 @@
             document.getElementById('new-class-date').value = nextSat.toISOString().slice(0, 10);
 
             document.getElementById('add-class-modal').classList.add('active');
-            classPrecheckState = null;
-            await runClassPrecheck();
             lucide.createIcons();
         }
 
         function closeAddClassModal() {
             document.getElementById('add-class-modal').classList.remove('active');
-        }
-        function initClassPrecheckEvents() {
-            const dateInput = document.getElementById('new-class-date');
-            const homeroomSelect = document.getElementById('new-class-homeroom');
-            if (dateInput && !dateInput.dataset.precheckBound) {
-                dateInput.addEventListener('change', runClassPrecheck);
-                dateInput.dataset.precheckBound = '1';
-            }
-            if (homeroomSelect && !homeroomSelect.dataset.precheckBound) {
-                homeroomSelect.addEventListener('change', () => {
-                    if (classPrecheckState) {
-                        renderClassPrecheck(classPrecheckState);
-                    }
-                });
-                homeroomSelect.dataset.precheckBound = '1';
-            }
-        }
-
-        function getRecommendationByHomeroom(homeroomId) {
-            if (!classPrecheckState || !Array.isArray(classPrecheckState.homeroom_recommendations)) return null;
-            return classPrecheckState.homeroom_recommendations.find(r => String(r.homeroom_id) === String(homeroomId)) || null;
-        }
-
-        async function runClassPrecheck() {
-            const panel = document.getElementById('class-precheck-panel');
-            const loading = document.getElementById('class-precheck-loading');
-            const content = document.getElementById('class-precheck-content');
-            const startDate = document.getElementById('new-class-date').value;
-
-            if (!panel || !loading || !content) return;
-            if (!currentTrainingTypeId || !startDate) {
-                panel.classList.add('hidden');
-                content.innerHTML = '';
-                classPrecheckState = null;
-                return;
-            }
-
-            panel.classList.remove('hidden');
-            loading.classList.remove('hidden');
-            content.innerHTML = '';
-
-            try {
-                const resp = await fetch(`${API_BASE}/classes/precheck-plan`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        training_type_id: currentTrainingTypeId,
-                        start_date: startDate,
-                        horizon_weeks: 20
-                    })
-                });
-                const result = await resp.json();
-                if (!resp.ok) {
-                    throw new Error(result.error || '预检失败');
-                }
-
-                classPrecheckState = result;
-                renderClassPrecheck(result);
-            } catch (e) {
-                classPrecheckState = null;
-                content.innerHTML = `<div class="text-red-600">预检失败：${escapeHtml(e.message || '未知错误')}</div>`;
-            } finally {
-                loading.classList.add('hidden');
-            }
-        }
-
-        function renderClassPrecheck(data) {
-            const content = document.getElementById('class-precheck-content');
-            const selectedHomeroom = document.getElementById('new-class-homeroom').value;
-            if (!content || !data) return;
-
-            const predictedDates = (data.predicted_dates || []).slice(0, 6);
-            const restCount = Math.max(0, (data.predicted_dates || []).length - predictedDates.length);
-            const predictedText = predictedDates.length
-                ? predictedDates.join('、') + (restCount > 0 ? ` 等 ${data.predicted_dates.length} 次周末课` : '')
-                : '暂无可预演日期';
-
-            const riskHtml = (data.risk_hints || []).length
-                ? `<div class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">${(data.risk_hints || []).map(item => `<div>• ${escapeHtml(item)}</div>`).join('')}</div>`
-                : '';
-
-            const recommendationHtml = (data.homeroom_recommendations || []).slice(0, 4).map(r => {
-                const isSelected = String(selectedHomeroom) === String(r.homeroom_id);
-                const conflicts = (r.conflicts || []).slice(0, 2).map(c => c.date).join('、');
-                const conflictText = r.conflict_count > 0
-                    ? `冲突 ${r.conflict_count} 次${conflicts ? `（如 ${conflicts}）` : ''}`
-                    : '无冲突';
-                return `
-                    <div class="rounded border ${isSelected ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'} p-2 mt-2">
-                        <div class="flex items-center justify-between gap-2">
-                            <div>
-                                <div class="font-semibold">${escapeHtml(r.homeroom_name || '未命名')}</div>
-                                <div class="text-[11px] text-slate-600">评分 ${r.score} · ${escapeHtml(conflictText)}</div>
-                            </div>
-                            <button type="button" onclick="useSuggestedHomeroom(${r.homeroom_id})" class="text-[11px] px-2 py-1 rounded border bg-white hover:bg-slate-50">使用</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            const selectedConflict = selectedHomeroom ? getRecommendationByHomeroom(selectedHomeroom) : null;
-            const selectedWarning = selectedConflict && selectedConflict.conflict_count > 0
-                ? `<div class="mt-2 rounded border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">当前班主任存在潜在撞课：${selectedConflict.conflict_count} 次。建议改选推荐班主任或调整开班日期。</div>`
-                : '';
-
-            content.innerHTML = `
-                <div class="text-[11px] text-slate-600">预演课次：${escapeHtml(predictedText)}</div>
-                ${riskHtml}
-                <div class="mt-2 text-[11px] font-semibold text-slate-700">班主任建议（按冲突从低到高）</div>
-                ${recommendationHtml || '<div class="text-[11px] text-slate-500 mt-2">暂无可用班主任建议</div>'}
-                ${selectedWarning}
-            `;
-        }
-
-        function useSuggestedHomeroom(homeroomId) {
-            const select = document.getElementById('new-class-homeroom');
-            if (!select) return;
-            select.value = String(homeroomId);
-            if (classPrecheckState) {
-                renderClassPrecheck(classPrecheckState);
-            }
         }
 
         async function createClass() {
@@ -850,18 +688,6 @@
             if (!name || !startDate) {
                 alert('请填写班级名称和开始日期');
                 return;
-            }
-            if (homeroomId && classPrecheckState) {
-                const selected = getRecommendationByHomeroom(homeroomId);
-                if (selected && selected.conflict_count > 0) {
-                    const sampleDates = (selected.conflicts || []).slice(0, 3).map(c => c.date).join('、');
-                    const message = sampleDates
-                        ? `该班主任预检存在 ${selected.conflict_count} 次潜在撞课（如 ${sampleDates}）。是否继续创建？`
-                        : `该班主任预检存在 ${selected.conflict_count} 次潜在撞课。是否继续创建？`;
-                    if (!confirm(message)) {
-                        return;
-                    }
-                }
             }
 
             try {
@@ -884,10 +710,10 @@
                     loadMonthSchedule();
                 } else {
                     const err = await resp.json();
-                    alert('鍒涘缓澶辫触: ' + (err.error || '未知错误'));
+                    alert('创建失败: ' + (err.error || '未知错误'));
                 }
             } catch (e) {
-                alert('鍒涘缓澶辫触: ' + e.message);
+                alert('创建失败: ' + e.message);
             }
         }
 
@@ -902,13 +728,13 @@
             }
         }
 
-        // ==================== 鏁?课组合管?====================
+        // ==================== 教-课组合管理 ====================
         async function openAddComboModal(topicId) {
             document.getElementById('new-combo-topic-id').value = topicId;
 
-            // 加载讲师和课?
+            // 加载讲师和课程
             try {
-                // 加载?
+                // 加载中
                 const [teachersResp, coursesResp] = await Promise.all([
                     fetch(`${API_BASE}/teachers`),
                     fetch(`${API_BASE}/courses`)
@@ -925,26 +751,26 @@
                 if (courses.length === 0) console.warn('警告：系统中暂无课程数据');
 
                 document.getElementById('new-combo-teacher').innerHTML = '<option value="">-- 选择讲师 --</option>' +
-                    teachers.map(t => `<option value="${t.id}">${t.name} (${t.expertise || '暂无'})</option>`).join('');
+                    teachers.map(t => `<option value="${t.id}">${t.name} (${t.expertise || '无'})</option>`).join('');
 
-                // 过滤课程：只显示属于当前课题的课程，或未分类的课?
+                // 过滤课程：只显示属于当前课题的课程，或者未分类的课程
                 const currentTopicId = parseInt(topicId);
                 const filteredCourses = courses.filter(c => !c.topic_id || c.topic_id === currentTopicId);
 
                 if (filteredCourses.length === 0) {
-                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 该课题暂无专属课程--</option>';
+                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 该课题暂无专属课程 --</option>';
                 } else {
                     document.getElementById('new-combo-course').innerHTML = '<option value="">-- 选择课程 --</option>' +
                         filteredCourses.map(c => `
                             <option value="${c.id}" ${c.topic_id === currentTopicId ? 'class="font-bold bg-blue-50"' : ''}>
-                                ${c.topic_id === currentTopicId ? '【专属】' : ''}${c.name}
+                                ${c.topic_id === currentTopicId ? '★ ' : ''}${c.name}
                             </option>
                         `).join('');
                 }
 
                 document.getElementById('add-combo-modal').classList.add('active');
             } catch (e) {
-                console.error('加载课程组合数据失败:', e);
+                console.error('加载教-课组合数据失败:', e);
                 alert('数据加载失败: ' + e.message);
             }
         }
@@ -982,12 +808,12 @@
                     alert('保存失败');
                 }
             } catch (e) {
-                alert('保存失败: ' + e.message);
+                alert('保存错误: ' + e.message);
             }
         }
 
         async function deleteCombo(id) {
-            if (!confirm('确定删除该教课组合吗？')) return;
+            if (!confirm('确定删除该教-课组合吗？')) return;
             try {
                 await fetch(`${API_BASE}/combos/${id}`, { method: 'DELETE' });
                 openTrainingDetail(currentTrainingTypeId);
@@ -1042,7 +868,7 @@
 
                 return `
                     <div class="bg-slate-50 border rounded-xl p-4 mb-4">
-                        <h4 class="font-bold text-sm text-slate-700 mb-3">第 ${i + 1} 周 路 ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}</h4>
+                        <h4 class="font-bold text-sm text-slate-700 mb-3">第 ${i + 1} 周 · ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}</h4>
                         <div class="space-y-2 drop-zone" data-week="${weekKey}">
                             ${weeks[weekKey].map(s => {
                     const isPlanning = s.status === 'planning';
@@ -1065,7 +891,7 @@
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            ${s.combo ? `<div class="text-xs ${isPlanning ? 'text-slate-500' : 'text-blue-600'} font-semibold">${s.combo.teacher_name}</div><div class="text-[10px] text-slate-500">${s.combo.course_name}</div>` : '<div class="text-[10px] text-orange-500">待分</div>'}
+                                            ${s.combo ? `<div class="text-xs ${isPlanning ? 'text-slate-500' : 'text-blue-600'} font-semibold">${s.combo.teacher_name}</div><div class="text-[10px] text-slate-500">${s.combo.course_name}</div>` : '<div class="text-[10px] text-orange-500">待分配</div>'}
                                         </div>
                                     </div>
                                     <div class="mt-2 flex gap-2 pt-2 border-t border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1125,7 +951,7 @@
                     const targetWeek = zone.dataset.week;
 
                     if (sourceWeek !== targetWeek) {
-                        // 移动到目标周的周?
+                        // 移动到目标周的周六
                         const targetStart = new Date(targetWeek);
                         targetStart.setDate(targetStart.getDate() + (6 - targetStart.getDay()));
                         const newDate = targetStart.toISOString().slice(0, 10);
@@ -1139,7 +965,7 @@
                             const result = await resp.json();
 
                             if (result.warning) {
-                                if (!confirm(result.warning + '\\n是否继续？')) return;
+                                if (!confirm(result.warning + '\n是否继续？')) return;
                                 // 强制执行
                                 await fetch(`${API_BASE}/schedule/adjust`, {
                                     method: 'POST',
@@ -1173,7 +999,7 @@
             }
         }
 
-        // ==================== 瑙嗗浘鐘舵€佺鐞?====================
+        // ==================== 视图状态管理 ====================
         let cachedMonthData = null;
         let currentWeekIndex = 0;
         let currentViewMode = 'week'; // 'week' | 'month'
@@ -1184,7 +1010,7 @@
                 if (!resp.ok) throw new Error('Failed to load');
                 cachedMonthData = await resp.json();
 
-                // 默认显示第一周，或保持当前index（如果还在范围内?
+                // 默认显示第一周，或保持当前index（如果还在范围内）
                 if (currentWeekIndex >= (cachedMonthData.weeks || []).length) {
                     currentWeekIndex = 0;
                 }
@@ -1192,7 +1018,7 @@
                 renderSchedule();
                 updateMonthHeader();
             } catch (e) {
-                document.getElementById('schedule-container').innerHTML = '<div class="text-center text-slate-400 p-8">加载失败，请棢查后端服</div>';
+                document.getElementById('schedule-container').innerHTML = '<div class="text-center text-slate-400 p-8">加载失败，请检查后端服务</div>';
             }
         }
 
@@ -1249,139 +1075,8 @@
 
 
 
-        function escapeHtml(value) {
-            return String(value || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        function getConflictSuggestion(reason) {
-            const text = (reason || '').toLowerCase();
-            if (text.includes('节假日')) return '建议顺延到下一个可用周末';
-            if (text.includes('请假') || text.includes('不可用')) return '建议更换讲师或顺延一周';
-            if (text.includes('班主任')) return '建议调整到班主任可到场的周末';
-            if (text.includes('撞课') || text.includes('冲突')) return '建议同周错开或顺延到下一周';
-            return '建议先调整日期，再确认师资安排';
-        }
-
-        function buildConflictAssistHtml(sch, isPast) {
-            const isConflict = sch.status === 'conflict';
-            if (!isConflict) return '';
-
-            const reason = sch.notes || '系统未记录冲突原因';
-            const suggestion = getConflictSuggestion(reason);
-            const impactScope = `影响班级 ${sch.class_name || '-'}，日期 ${sch.scheduled_date || '-'}`;
-
-            return `
-                <div class="mt-2 p-2 rounded-lg bg-red-50 border border-red-200">
-                    <div class="text-[11px] text-red-700 font-semibold">冲突原因: ${escapeHtml(reason)}</div>
-                    <div class="text-[11px] text-red-600 mt-1">自动建议: ${escapeHtml(suggestion)}</div>
-                    <div class="text-[11px] text-slate-500 mt-1">影响范围: ${escapeHtml(impactScope)}</div>
-                    ${!isPast ? `
-                    <div class="mt-2 flex gap-2">
-                        <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">去调整</button>
-                        <button onclick="postponeConflictByWeek(${sch.id}, '${sch.scheduled_date}'); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-white border border-red-200 text-red-600 rounded hover:bg-red-50">顺延一周</button>
-                    </div>` : ''}
-                </div>
-            `;
-        }
-
-        async function postponeConflictByWeek(scheduleId, dateStr) {
-            try {
-                const base = new Date(dateStr);
-                const tried = [];
-
-                const allSchedules = (cachedMonthData?.weeks || []).flatMap(w => w.schedules || []);
-                const currentSchedule = allSchedules.find(x => x.id === scheduleId) || null;
-
-                function weekLabel(newDateStr) {
-                    const d = new Date(newDateStr);
-                    const weeks = cachedMonthData?.weeks || [];
-                    for (let i = 0; i < weeks.length; i++) {
-                        const ws = new Date(weeks[i].week_start);
-                        const we = new Date(weeks[i].week_end);
-                        if (d >= ws && d <= we) return `Week ${i + 1}`;
-                    }
-                    return `Cross-month (${newDateStr})`;
-                }
-
-                function riskHints(oldDateStr, newDateStr) {
-                    const risks = [];
-                    const oldDate = new Date(oldDateStr);
-                    const newDate = new Date(newDateStr);
-                    const gapDays = Math.round((newDate - oldDate) / (24 * 3600 * 1000));
-
-                    if (gapDays > 14) {
-                        risks.push(`Gap from current class is ${gapDays} days`);
-                    }
-
-                    if (oldDate.getMonth() !== newDate.getMonth()) {
-                        risks.push('Moved to next month, check monthly continuity');
-                    }
-
-                    if (currentSchedule) {
-                        const sameClassDates = allSchedules
-                            .filter(x => x.class_id === currentSchedule.class_id && x.id !== scheduleId && x.scheduled_date)
-                            .map(x => new Date(x.scheduled_date));
-
-                        if (sameClassDates.length > 0) {
-                            const nearest = Math.min(...sameClassDates.map(d => Math.abs(newDate - d)));
-                            const nearestDays = Math.round(nearest / (24 * 3600 * 1000));
-                            if (nearestDays > 14) {
-                                risks.push(`Nearest same-class lesson gap is about ${nearestDays} days`);
-                            }
-                        }
-                    }
-
-                    return risks;
-                }
-
-                for (let i = 1; i <= 12; i++) {
-                    const d = new Date(base);
-                    d.setDate(d.getDate() + i * 7);
-                    const newDate = d.toISOString().slice(0, 10);
-
-                    const resp = await fetch(`${API_BASE}/schedule/adjust`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ schedule_id: scheduleId, new_date: newDate })
-                    });
-                    const data = await resp.json();
-
-                    if (resp.ok && !data.error && !data.warning) {
-                        const wk = weekLabel(newDate);
-                        const risks = riskHints(dateStr, newDate);
-                        const riskText = risks.length
-                            ? '\nRisk:\n- ' + risks.join('\n- ')
-                            : '\nRisk: no obvious risk detected';
-
-                        await loadMonthSchedule();
-                        if (currentClassId) await openClassScheduleModal(currentClassId);
-                        alert(`Rescheduled to ${wk} (${newDate})${riskText}`);
-                        return;
-                    }
-
-                    tried.push(`${weekLabel(newDate)}: ${data.error || data.warning || 'not available'}`);
-                }
-
-                const summary = tried.length ? ('\nTried:\n- ' + tried.join('\n- ')) : '';
-                alert(`Reschedule failed after 12 weekends.${summary}`);
-            } catch (e) {
-                alert('Reschedule failed');
-            }
-        }
-
-
         function renderMonthView() {
             const container = document.getElementById('schedule-container');
-            // guard against missing data
-            if (!cachedMonthData) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
-                return;
-            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
@@ -1391,130 +1086,119 @@
 
             let html = `
                 <div class="flex items-center justify-between mb-6 px-2">
-                    <div class="flex items-center gap-4">
-                        <span class="text-slate-400 text-sm font-medium">全月总览（仅周六日）</span>
+                     <div class="flex items-center gap-4">
+                        <span class="text-slate-400 text-sm font-medium">全月总览</span>
                         <div class="flex gap-3 text-xs opacity-80">
                             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-50 border border-slate-300 border-dashed"></span>预排</span>
                             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-50 border border-blue-200"></span>已排</span>
                             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-50 border border-green-200"></span>已确认</span>
                         </div>
-                    </div>
-                    <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
+                     </div>
+                     <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
                         <i data-lucide="plus" class="w-4 h-4"></i> 新增排课
                     </button>
                 </div>
-                <div class="space-y-6 pb-8">
+                <div class="space-y-8 pb-8">
             `;
 
             weeks.forEach((w, idx) => {
                 const weekStart = new Date(w.week_start);
                 const weekEnd = new Date(w.week_end);
-                const sat = new Date(weekStart);
-                sat.setDate(sat.getDate() + (6 - sat.getDay()));
-                const sun = new Date(sat);
-                sun.setDate(sun.getDate() + 1);
                 const dateRangeStr = `${weekStart.getMonth() + 1}/${weekStart.getDate()} - ${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
 
                 html += `
-                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                        <div class="px-4 py-3 bg-slate-50 border-b flex items-center gap-3">
-                            <span class="bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-600 font-bold">第${idx + 1} 周</span>
-                            <span class="text-sm text-slate-500">${dateRangeStr}</span>
-                        </div>
+                    <div class="border-b border-slate-100 pb-6 last:border-0 last:pb-0">
+                        <h4 class="font-bold text-slate-600 text-sm mb-4 flex items-center gap-2">
+                            <span class="bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-500">第 ${idx + 1} 周</span>
+                            <span>${dateRangeStr}</span>
+                        </h4>
                 `;
 
                 if (!w.schedules || w.schedules.length === 0) {
-                    html += `<div class="p-5 text-xs text-slate-400 italic">本周无课</div>`;
+                    html += `<div class="text-xs text-slate-400 italic pl-2">本周无课</div>`;
                 } else {
-                    html += `
-                        <div class="overflow-x-auto">
-                            <table class="w-full min-w-[760px] text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
-                                    <tr>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">班级/课题</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周六 ${sat.getMonth() + 1}/${sat.getDate()}</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周日 ${sun.getMonth() + 1}/${sun.getDate()}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                    `;
+                    html += `<div class="grid grid-cols-1 gap-4 px-2">`;
+                    w.schedules.forEach(s => {
+                        // 日期处理
+                        const d1 = new Date(s.scheduled_date);
+                        const d2 = new Date(d1);
+                        d2.setDate(d1.getDate() + 1);
+                        const day1Str = `${d1.getMonth() + 1}/${d1.getDate()}(六)`;
+                        const day2Str = `${d2.getMonth() + 1}/${d2.getDate()}(日)`;
+                        const progress = s.topic_sequence && s.total_topics ? `${s.topic_sequence}/${s.total_topics}` : '-/-';
+                        const isSelected = selectedMergeIds.has(s.id);
+                        const isConflict = s.status === 'conflict';
+                        const isCompleted = s.status === 'completed' || s.status === 'confirmed';
 
-                    w.schedules.forEach(sch => {
-                        const progress = sch.topic_sequence && sch.total_topics ? `${sch.topic_sequence}/${sch.total_topics}` : '-/-';
-                        const isSelected = selectedMergeIds.has(sch.id);
-                        const isConflict = sch.status === 'conflict';
-                        const isCompleted = sch.status === 'completed' || sch.status === 'confirmed';
-                        const isPlanning = sch.status === 'planning';
-                        const isPast = new Date(sch.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
-                        const rowClass = isSelected ? 'bg-indigo-50' : (isConflict ? 'bg-red-50' : 'bg-white');
-                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                        const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
-                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
-                        const statusText = isCompleted ? '已完成' : (isPlanning ? `预排 ${progress}` : `进度 ${progress}`);
-                        const conflictAssistHtml = buildConflictAssistHtml(sch, isPast);
+                        const isPlanning = s.status === 'planning';
+                        const isPast = new Date(s.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
+                        let cardClass = 'bg-white';
+                        if (isSelected) cardClass = 'ring-2 ring-indigo-500 bg-indigo-50/30';
+                        else if (isConflict) cardClass = 'ring-2 ring-red-500 bg-red-50 border-red-200';
+                        else if (isCompleted) cardClass = 'bg-green-50 border-green-200 opacity-80';
+                        else if (isPlanning) cardClass = 'bg-slate-50 border-dashed border-slate-300 opacity-60';
+
+                        // 讲师和课程信息
+                        const day1Teacher = s.combo ? s.combo.teacher_name : '待定';
+                        const day1Course = s.combo ? s.combo.course_name : '待定';
+                        const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : day1Teacher;
+                        const day2Course = s.combo_2 ? s.combo_2.course_name : day1Course;
 
                         html += `
-                            <tr class="${rowClass} ${isMergeMode ? 'cursor-pointer' : ''}" ${isMergeMode ? `onclick="toggleMergeSelect(${sch.id})"` : ''}>
-                                <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                    <div class="flex justify-between items-start">
-                                        <div>
-                                            <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
-                                            <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
-                                            <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
-                                            <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
-                                            ${conflictAssistHtml}
-                                        </div>
-                                        ${!isPast ? `
-                                        <div class="flex gap-2 ml-4">
-                                            <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded whitespace-nowrap">编辑</button>
-                                            <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded whitespace-nowrap">删除</button>
-                                        </div>` : ''}
-                                    </div>
-                                </td>
-                                <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                    <div class="font-semibold text-slate-700">${day1Teacher}</div>
-                                    <div class="text-xs text-slate-500 mt-1">${day1Course}</div>
-                                </td>
-                                <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                    <div class="font-semibold text-slate-700">${day2Teacher}</div>
-                                    <div class="text-xs text-slate-500 mt-1">${day2Course}</div>
-                                </td>
-                            </tr>
+                        <div class="${cardClass} rounded-xl shadow-sm border border-slate-200 p-4 hover:shadow-md transition-all relative group"
+                             onclick="${isMergeMode ? `toggleMergeSelect(${s.id})` : ''}">
+                             
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-slate-500 text-xs font-bold">${day1Str} - ${day2Str}</span>
+                                <span class="${isCompleted ? 'text-green-600 bg-green-100' : (isPlanning ? 'text-slate-500 bg-slate-100 border border-slate-200' : 'text-blue-600 bg-blue-50')} text-[10px] font-bold px-1.5 py-0.5 rounded">${isCompleted ? '✓ 已完成' : (isPlanning ? '预排' : progress)}</span>
+                            </div>
+                            
+                            <h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">${s.class_name}</h3>
+                            <div class="text-xs text-slate-500 mb-3">《${s.topic_name}》 · 班主任: ${s.homeroom_name || '未分配'}</div>
+                            
+                            <!-- 双天授课详情 -->
+                            <div class="border-t border-slate-100 pt-2 space-y-1.5 text-[11px]">
+                                <div class="flex items-center gap-2 text-slate-600">
+                                    <span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">周六</span>
+                                    <span class="font-medium">${day1Teacher}</span>
+                                    <span class="text-slate-400">-</span>
+                                    <span class="text-slate-500 truncate">${day1Course}</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-slate-600">
+                                    <span class="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">周日</span>
+                                    <span class="font-medium">${day2Teacher}</span>
+                                    <span class="text-slate-400">-</span>
+                                    <span class="text-slate-500 truncate">${day2Course}</span>
+                                </div>
+                            </div>
+
+                             <!-- Actions on hover -->
+                            <!-- Formatting & Actions -->
+                            ${!isPast ? `
+                            <div class="absolute right-4 bottom-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                <button onclick="openAdjustModal(${s.id}); event.stopPropagation();" class="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                <button onclick="deleteScheduleItem(${s.id}); event.stopPropagation();" class="p-2 bg-red-50 hover:bg-red-100 rounded-lg text-red-500 transition-colors"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                            </div>
+                            `: ''}
+                             ${s.merged_with ? '<div class="absolute top-2 right-2 text-[10px] bg-purple-50 text-purple-600 px-1 rounded">合</div>' : ''}
+                             ${isSelected ? '<div class="absolute top-2 right-8 text-indigo-600"><i data-lucide="check-circle" class="w-4 h-4"></i></div>' : ''}
+                             ${isConflict ? `<div class="absolute top-2 right-2 text-red-600 bg-white rounded-full p-0.5 shadow-sm tooltip-trigger" title="${s.notes}"><i data-lucide="alert-triangle" class="w-4 h-4"></i></div>` : ''}
+                        </div>
                         `;
                     });
-
-                    html += `
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
+                    html += `</div>`;
                 }
 
                 html += `</div>`;
             });
 
-            html += `
-                </div>
-                <div class="mt-8 flex justify-end items-center gap-4 px-2 pt-4 border-t border-slate-100">
-                    <div class="text-xs text-slate-400">按月规划全学期排课进</div>
-                    <div class="flex gap-3">
-                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">保存草稿</button>
-                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
-                    </div>
-                </div>
-            `;
-
+            html += `</div>`;
             container.innerHTML = html;
             lucide.createIcons();
         }
 
         function renderWeekView() {
             const container = document.getElementById('schedule-container');
-            if (!cachedMonthData) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
-                return;
-            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
@@ -1527,12 +1211,9 @@
 
             const weekStart = new Date(w.week_start);
             const weekEnd = new Date(w.week_end);
-            const sat = new Date(weekStart);
-            sat.setDate(sat.getDate() + (6 - sat.getDay()));
-            const sun = new Date(sat);
-            sun.setDate(sun.getDate() + 1);
             const dateRangeStr = `${weekStart.getMonth() + 1}/${weekStart.getDate()} - ${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
 
+            // 渲染周视图 Header controls
             let html = `
                 <div class="flex items-center justify-between mb-6 px-2">
                     <div class="flex items-center gap-4">
@@ -1549,306 +1230,159 @@
                         </div>
                         <span class="text-slate-400 text-sm font-medium">${dateRangeStr}</span>
                     </div>
-                    <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
+                     <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
                         <i data-lucide="plus" class="w-4 h-4"></i> 新增排课
                     </button>
                 </div>
             `;
 
+            // 渲染课程卡片 Grid
             if (!w.schedules || w.schedules.length === 0) {
                 html += `
                     <div class="min-h-[300px] flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl m-4 bg-slate-50/50">
                         <div class="text-slate-400 text-sm mb-4">本周暂无课程安排</div>
                         <button onclick="openAddClassModal()" class="text-blue-600 font-bold text-sm hover:underline">立即排课</button>
                     </div>
-                `;
+                 `;
             } else {
-                html += `
-                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden mx-2">
-                        <div class="overflow-x-auto">
-                            <table class="w-full min-w-[760px] text-sm">
-                                <thead class="bg-slate-50 text-slate-600">
-                                    <tr>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">班级/课题</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周六 ${sat.getMonth() + 1}/${sat.getDate()}</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周日 ${sun.getMonth() + 1}/${sun.getDate()}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                `;
+                html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 px-2">`;
 
-                w.schedules.forEach(sch => {
-                    const progress = sch.topic_sequence && sch.total_topics ? `${sch.topic_sequence}/${sch.total_topics}` : '-/-';
-                    const isSelected = selectedMergeIds.has(sch.id);
-                    const isConflict = sch.status === 'conflict';
-                    const isCompleted = sch.status === 'completed' || sch.status === 'confirmed';
-                    const isPlanning = sch.status === 'planning';
-                    const isPast = new Date(sch.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
-                    const rowClass = isSelected ? 'bg-indigo-50' : (isConflict ? 'bg-red-50' : 'bg-white');
-                    const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                    const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                    const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
-                    const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
-                    const statusText = isCompleted ? '已完成' : (isPlanning ? `预排 ${progress}` : `进度 ${progress}`);
-                    const conflictAssistHtml = buildConflictAssistHtml(sch, isPast);
+                w.schedules.forEach(s => {
+                    // 日期处理
+                    const d1 = new Date(s.scheduled_date);
+                    const d2 = new Date(d1);
+                    d2.setDate(d1.getDate() + 1);
+                    const day1Str = `${d1.getMonth() + 1}/${d1.getDate()}(六)`;
+                    const day2Str = `${d2.getMonth() + 1}/${d2.getDate()}(日)`;
+
+                    // 进度 & 状态
+                    const progress = s.topic_sequence && s.total_topics ? `${s.topic_sequence}/${s.total_topics}` : '-/-';
+                    const isSelected = selectedMergeIds.has(s.id);
+                    const isConflict = s.status === 'conflict';
+                    const isCompleted = s.status === 'completed' || s.status === 'confirmed';
+                    const isPlanning = s.status === 'planning';
+                    const isPast = new Date(s.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
+
+                    let cardClass = 'bg-white';
+                    if (isSelected) cardClass = 'ring-2 ring-indigo-500 bg-indigo-50/30';
+                    else if (isConflict) cardClass = 'ring-2 ring-red-500 bg-red-50 border-red-200';
+                    else if (isCompleted) cardClass = 'bg-green-50 border-green-200';
+                    else if (isPlanning) cardClass = 'bg-slate-50 border-dashed border-slate-300 opacity-60';
+
+                    // 讲师和课程信息
+                    const day1Teacher = s.combo ? s.combo.teacher_name : '待定';
+                    const day1Course = s.combo ? s.combo.course_name : '待定';
+                    const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : day1Teacher;
+                    const day2Course = s.combo_2 ? s.combo_2.course_name : day1Course;
 
                     html += `
-                        <tr class="${rowClass} ${isMergeMode ? 'cursor-pointer' : ''}" ${isMergeMode ? `onclick="toggleMergeSelect(${sch.id})"` : ''}>
-                            <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
-                                <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
-                                <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
-                                <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
-                                    ${conflictAssistHtml}
-                                <div class="mt-2 flex gap-2">
-                                    ${!isPast ? `
-                                    <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded">编辑</button>
-                                    <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">删除</button>` : ''}
-                                    ${sch.merged_with
-                            ? `<button onclick="unmergeSchedule(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded">拆分</button>`
-                            : ''}
+                        <div class="${cardClass} rounded-2xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-all relative group"
+                             onclick="${isMergeMode ? `toggleMergeSelect(${s.id})` : ''}">
+                             
+                            <!-- Header: Date & Progress -->
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="text-slate-500 text-xs font-medium">${day1Str} - ${day2Str}</div>
+                                <div class="${isCompleted ? 'text-green-600 bg-green-100' : (isPlanning ? 'text-slate-500 bg-slate-100 border border-slate-200' : 'text-blue-600 bg-blue-50')} text-xs font-bold px-2 py-1 rounded">${isCompleted ? '✓ 已完成' : (isPlanning ? '预计: ' + progress : '进度 ' + progress)}</div>
+                            </div>
+
+                            <!-- Main Content -->
+                            <div class="mb-4">
+                                <h3 class="text-lg font-bold text-slate-800 mb-1 leading-tight">${s.class_name || '未命名班级'}</h3>
+                                <div class="text-sm text-slate-500 font-medium mb-3">《${s.topic_name || '待定课题'}》</div>
+                                
+                                <div class="flex items-center gap-2 text-xs text-slate-600 mb-4">
+                                    <div class="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                                        <i data-lucide="user" class="w-3 h-3"></i>
+                                    </div>
+                                    <span class="font-medium">班主任:</span> 
+                                    <span>${s.homeroom_name || '未分配'}</span>
                                 </div>
-                            </td>
-                            <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                <div class="font-semibold text-slate-700">${day1Teacher}</div>
-                                <div class="text-xs text-slate-500 mt-1">${day1Course}</div>
-                            </td>
-                            <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                <div class="font-semibold text-slate-700">${day2Teacher}</div>
-                                <div class="text-xs text-slate-500 mt-1">${day2Course}</div>
-                            </td>
-                        </tr>
+                                
+                                <!-- 双天授课详情 -->
+                                <div class="border-t border-slate-100 pt-3 space-y-2 text-xs">
+                                    <div class="flex items-center gap-2 text-slate-600">
+                                        <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-bold">周六</span>
+                                        <span class="font-semibold">${day1Teacher}</span>
+                                        <span class="text-slate-400">-</span>
+                                        <span class="text-slate-500">${day1Course}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-slate-600">
+                                        <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">周日</span>
+                                        <span class="font-semibold">${day2Teacher}</span>
+                                        <span class="text-slate-400">-</span>
+                                        <span class="text-slate-500">${day2Course}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Formatting & Actions -->
+                            ${s.merged_with ? '<div class="absolute top-4 right-[80px] text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded font-bold">合班</div>' : ''}
+                            ${isSelected ? '<div class="absolute top-4 right-4 text-indigo-600"><i data-lucide="check-circle" class="w-5 h-5"></i></div>' : ''}
+                            ${isConflict ? `<div class="absolute top-4 right-4 text-red-600"><i data-lucide="alert-triangle" class="w-5 h-5"></i></div>` : ''}
+
+                            <div class="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-slate-100 opacity-80 group-hover:opacity-100 transition-opacity">
+                                ${!isPast ? `
+                                <button onclick="openAdjustModal(${s.id}); event.stopPropagation();" class="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs py-2 rounded-lg font-medium transition-colors">
+                                    编辑
+                                </button>
+                                <button onclick="deleteScheduleItem(${s.id}); event.stopPropagation();" class="flex-1 bg-red-50 hover:bg-red-100 text-red-600 text-xs py-2 rounded-lg font-medium transition-colors">
+                                    删除
+                                </button>
+                                ` : '<span class="text-xs text-slate-400 italic w-full text-center">已结束课程</span>'}
+                            </div>
+                                ${s.merged_with ?
+                            `<button onclick="unmergeSchedule(${s.id}); event.stopPropagation();" class="bg-purple-50 hover:bg-purple-100 text-purple-600 text-xs px-3 py-2 rounded-lg font-medium">拆分</button>` :
+                            `<button onclick="toggleMergeMode(); event.stopPropagation();" class="bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs px-3 py-2 rounded-lg font-medium">合班</button>`
+                        }
+                                <button onclick="deleteScheduleItem(${s.id}); event.stopPropagation();" class="bg-red-50 hover:bg-red-100 text-red-500 text-xs px-3 py-2 rounded-lg font-medium">
+                                    删除
+                                </button>
+                            </div>
+                        </div>
                     `;
                 });
 
-                html += `
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                `;
+                html += `</div>`;
             }
 
+            // Footer Action
             html += `
                 <div class="mt-8 flex justify-end items-center gap-4 px-2 pt-4 border-t border-slate-100">
-                    <div class="text-xs text-slate-400">按月规划全学期排课进</div>
-                    <div class="flex gap-3">
-                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">淇濆瓨鑽夌</button>
-                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
-                    </div>
+                   <div class="text-xs text-slate-400">按月规划全学期排课进度...</div>
+                   <div class="flex gap-3">
+                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">保存草稿</button>
+                        <button onclick="publishMonth()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
+                   </div>
                 </div>
             `;
 
             container.innerHTML = html;
             lucide.createIcons();
+
+            // 如果处于合并模式，显示选择状态 (通过CSS类已处理)
         }
 
         function saveDraft() {
             alert('草稿已保存');
         }
 
-        function renderPublishChecklist(checklist) {
-            const unresolved = checklist.unresolved || [];
-            const pending = checklist.pending || [];
-            const resolved = checklist.resolved || [];
-
-            const unresolvedHtml = unresolved.length ? unresolved.map((item, idx) => `
-                <div class="border border-red-200 bg-red-50/60 rounded-lg p-3">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <div class="text-sm font-bold text-red-700">${item.class_name || '-'} 路 ${item.topic_name || '-'}</div>
-                            <div class="text-xs text-slate-500 mt-1">鏃ユ湡: ${item.date || '-'} | 褰卞搷鑼冨洿: ${item.impact_scope || '-'}</div>
-                        </div>
-                        <button type="button" onclick="document.getElementById('conflict-reason-${idx}').classList.toggle('hidden')" class="text-xs px-2 py-1 bg-white border rounded text-slate-600">鏌ョ湅鍘熷洜</button>
-                    </div>
-                    <div id="conflict-reason-${idx}" class="hidden mt-2 text-xs text-slate-700 bg-white border rounded p-2">
-                        <div><span class="font-semibold">鍘熷洜:</span> ${item.reason || '-'}</div>
-                        <div class="mt-1"><span class="font-semibold">自动建议:</span> ${item.suggestion || '-'}</div>
-                    </div>
-                </div>
-            `).join('') : '<div class="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">无无法解决冲</div>';
-
-            const pendingHtml = pending.length ? pending.map(item => `
-                <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">${item.class_name || '-'} 路 ${item.topic_name || '-'} 路 ${item.date || '-'}（待确认</div>
-            `).join('') : '<div class="text-xs text-slate-400">鏃犲緟纭椤</div>';
-
-            const resolvedHtml = resolved.length ? `<div class="text-xs text-slate-600">已解?${resolved.length} 椤</div>` : '<div class="text-xs text-slate-400">鏃犲凡瑙ｅ喅椤</div>';
-
-            return `
-                <div class="mt-4 space-y-3">
-                    <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-red-700 mb-2">无法解决（默认阻止发布）</div>
-                        <div class="space-y-2">${unresolvedHtml}</div>
-                    </div>
-                    <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-amber-700 mb-2">待确</div>
-                        <div class="space-y-2">${pendingHtml}</div>
-                    </div>
-                    <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-slate-700 mb-2">已解</div>
-                        ${resolvedHtml}
-                    </div>
-                </div>
-            `;
-        }
-
-        function updatePublishControls() {
-            const unresolved = publishChecklistState.unresolved || [];
-            const forceBox = document.getElementById('publish-force-controls');
-            const forceCheck = document.getElementById('force-publish-all');
-            const forceNote = document.getElementById('force-publish-note');
-            const tip = document.getElementById('publish-block-tip');
-            const btn = document.getElementById('publish-confirm-btn');
-
-            if (!unresolved.length) {
-                forceBox.classList.add('hidden');
-                tip.classList.add('hidden');
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                return;
-            }
-
-            forceBox.classList.remove('hidden');
-            const allowed = forceCheck.checked && forceNote.value.trim().length > 0;
-            if (!allowed) {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'cursor-not-allowed');
-                tip.textContent = '存在无法解决冲突。请勾选强制发布并填写备注。';
-                tip.classList.remove('hidden');
-            } else {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
-                tip.classList.add('hidden');
-            }
-        }
-
-        async function openPublishPreview() {
-            if (!cachedMonthData || !(cachedMonthData.weeks || []).length) {
-                alert('当前没有可发布的排课数据');
-                return;
-            }
-
-            const preview = document.getElementById('publish-preview-content');
-            const forceCheck = document.getElementById('force-publish-all');
-            const forceNote = document.getElementById('force-publish-note');
-            forceCheck.checked = false;
-            forceNote.value = '';
-
-            let checklist = { unresolved: [], pending: [], resolved: [] };
-            try {
-                const ckResp = await fetch(`${API_BASE}/schedule/publish-checklist?year=${currentYear}&month=${currentMonth}`);
-                if (ckResp.ok) {
-                    const ckData = await ckResp.json();
-                    checklist = ckData.checklist || checklist;
-                }
-            } catch (e) {
-                console.error(e);
-            }
-            publishChecklistState = checklist;
-
-            const weeks = cachedMonthData.weeks || [];
-            let html = `
-                <div class="mb-4 text-sm text-slate-600">${cachedMonthData.year}骞?{cachedMonthData.month}月发布预览（周六/周日</div>
-                <div class="space-y-4">
-            `;
-
-            weeks.forEach((w, idx) => {
-                const weekStart = new Date(w.week_start);
-                const sat = new Date(weekStart);
-                sat.setDate(sat.getDate() + (6 - sat.getDay()));
-                const sun = new Date(sat);
-                sun.setDate(sun.getDate() + 1);
-
-                const satItems = (w.schedules || []).map(sch => {
-                    const teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                    const course = sch.combo ? sch.combo.course_name : '待定';
-                    return `<div class="text-xs text-slate-700 mb-1"><span class="font-semibold">${sch.class_name}</span> 路 ${teacher} 路 ${course}</div>`;
-                }).join('') || '<div class="text-xs text-slate-400">鏃</div>';
-
-                const sunItems = (w.schedules || []).map(sch => {
-                    const teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo ? sch.combo.teacher_name : '待定');
-                    const course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo ? sch.combo.course_name : '待定');
-                    return `<div class="text-xs text-slate-700 mb-1"><span class="font-semibold">${sch.class_name}</span> 路 ${teacher} 路 ${course}</div>`;
-                }).join('') || '<div class="text-xs text-slate-400">鏃</div>';
-
-                html += `
-                    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                        <div class="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-600">第${idx + 1} 周</div>
-                        <div class="grid grid-cols-2">
-                            <div class="p-3 border-r border-slate-100">
-                                <div class="text-xs font-bold text-blue-600 mb-2">周六 ${sat.getMonth() + 1}/${sat.getDate()}</div>
-                                ${satItems}
-                            </div>
-                            <div class="p-3">
-                                <div class="text-xs font-bold text-orange-600 mb-2">周日 ${sun.getMonth() + 1}/${sun.getDate()}</div>
-                                ${sunItems}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-
-            html += `</div>` + renderPublishChecklist(checklist);
-            preview.innerHTML = html;
-            document.getElementById('publish-preview-modal').classList.add('active');
-
-            forceCheck.onchange = updatePublishControls;
-            forceNote.oninput = updatePublishControls;
-            updatePublishControls();
-            lucide.createIcons();
-        }
-
-        function closePublishPreview() {
-            document.getElementById('publish-preview-modal').classList.remove('active');
-        }
-
-        async function executePublishMonth() {
-            const unresolved = publishChecklistState.unresolved || [];
-            const forceCheck = document.getElementById('force-publish-all');
-            const forceNote = document.getElementById('force-publish-note');
-
-            const payload = {
-                year: currentYear,
-                month: currentMonth,
-                force_publish: unresolved.length > 0,
-                force_note: forceNote.value.trim()
-            };
-
-            if (unresolved.length > 0) {
-                if (!forceCheck.checked || !payload.force_note) {
-                    updatePublishControls();
-                    return;
-                }
-            }
-
+        async function publishMonth() {
+            if (!confirm(`确定发布 ${currentYear}年${currentMonth}月 的排课计划吗？`)) return;
             try {
                 const resp = await fetch(`${API_BASE}/schedule/publish`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ year: currentYear, month: currentMonth })
                 });
-
-                const data = await resp.json();
                 if (resp.ok) {
-                    closePublishPreview();
-                    alert(data.message || '月度计划已发布');
+                    alert('月度计划已发布');
                     loadMonthSchedule();
-                    return;
                 }
-
-                if (resp.status === 409 && data.code === 'UNRESOLVED_CONFLICTS') {
-                    publishChecklistState = data.checklist || publishChecklistState;
-                    updatePublishControls();
-                    alert('存在无法解决冲突，默认阻止发布。请勾选强制发布并填写备注。');
-                    return;
-                }
-
-                alert(data.error || '发布失败');
             } catch (e) {
                 alert('发布失败');
             }
         }
-
+        // ==================== 合班逻辑 ====================
         function toggleMergeMode() {
             isMergeMode = !isMergeMode;
             selectedMergeIds.clear();
@@ -1866,7 +1400,7 @@
             }
 
             lucide.createIcons();
-            loadMonthSchedule();
+            loadMonthSchedule(); // 重新渲染以更新状态
         }
 
         function toggleMergeSelect(id) {
@@ -1876,7 +1410,7 @@
                 selectedMergeIds.add(id);
             }
 
-            // 鏇存柊纭鎸夐挳鐘舵€?
+            // 更新确认按钮状态
             const confirmBtn = document.getElementById('confirm-merge-btn');
             const countSpan = document.getElementById('merge-count');
 
@@ -1887,7 +1421,7 @@
             }
             countSpan.textContent = selectedMergeIds.size;
 
-            // 屢部重新渲染过于复杂，直接重新加载
+            // 局部重新渲染过于复杂，直接重新加载
             loadMonthSchedule();
         }
 
@@ -1906,7 +1440,7 @@
 
                 if (resp.ok) {
                     alert('合班成功');
-                    toggleMergeMode(); // 逢出合并模?
+                    toggleMergeMode(); // 退出合并模式
                 } else {
                     const err = await resp.json();
                     alert('合班失败: ' + (err.error || '未知错误'));
@@ -1944,14 +1478,14 @@
                 `;
                 document.getElementById('adjust-new-date').value = schedule.scheduled_date;
 
-                // 2. 加载该课题下的可选教-课组?
+                // 2. 加载该课题下的可选教-课组合
                 const combosResp = await fetch(`${API_BASE}/combos?topic_id=${schedule.topic_id}`);
                 const combos = await combosResp.json();
 
-                // 3. 填充下拉?
+                // 3. 填充下拉框
                 const comboSelect = document.getElementById('adjust-combo');
                 if (combos.length === 0) {
-                    comboSelect.innerHTML = '<option value="">-- 该课题暂无教-课组?请重新配? --</option>';
+                    comboSelect.innerHTML = '<option value="">-- 该课题暂无教-课组合(请重新配置) --</option>';
                 } else {
                     comboSelect.innerHTML = '<option value="">-- 保持不变 --</option>' +
                         combos.map(c => `
@@ -1973,23 +1507,18 @@
             document.getElementById('adjust-schedule-modal').classList.remove('active');
         }
 
-        // 移动课程至指定周（前一周或后一周）
         async function moveScheduleWeek(direction) {
             try {
-            // 发送请求至后端，指定要移动的课程ID和方向（prev/next）
-            await fetch(`${API_BASE}/schedule/move-week`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ schedule_id: currentScheduleId, direction })
-            });
-            // 关闭调整模态框
-            closeAdjustModal();
-            // 刷新月度排课视图
-            loadMonthSchedule();
-            // 如果当前班级已打开，刷新班级课表
-            if (currentClassId) openClassScheduleModal(currentClassId);
+                await fetch(`${API_BASE}/schedule/move-week`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ schedule_id: currentScheduleId, direction })
+                });
+                closeAdjustModal();
+                loadMonthSchedule();
+                if (currentClassId) openClassScheduleModal(currentClassId);
             } catch (e) {
-            alert('调整失败');  
+                alert('调整失败');
             }
         }
 
@@ -2010,7 +1539,7 @@
                 closeAdjustModal();
                 loadMonthSchedule();
             } catch (e) {
-                alert('淇濆瓨澶辫触');
+                alert('保存失败');
             }
         }
 
@@ -2022,43 +1551,23 @@
             if (btn.disabled) return;
 
             const prompt = document.getElementById('prompt-input').value.trim();
-
-            // 允许为空，作为无特殊要求”处?
-            // if (!prompt) {
-            //     alert('请输入提示词，或者描?无特殊要?');
-            //     return;
-            // }
+            if (!prompt) {
+                alert('请输入提示词，或者描述"无特殊要求"');
+                return;
+            }
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 正在思考并排课...' : '正在快速生成课表...');
+            btn.innerHTML = '<span class="loading"></span> AI 正在思考并排课...';
 
             const resultBox = document.getElementById('constraints-result');
             resultBox.classList.add('hidden');
 
             try {
-                // 0. 准备上下文数?
-                const [teachersResp, homeroomsResp, classesResp] = await Promise.all([
-                    fetch(`${API_BASE}/teachers`),
-                    fetch(`${API_BASE}/homerooms`),
-                    fetch(`${API_BASE}/classes`)
-                ]);
-
-                const teachersData = await teachersResp.json();
-                const homeroomsData = await homeroomsResp.json();
-                const classesData = await classesResp.json();
-
-                const context = {
-                    current_month: `${currentYear}-${String(currentMonth).padStart(2, '0')}`,
-                    teachers: teachersData.map(t => t.name),
-                    homeroom_teachers: homeroomsData.map(h => h.name),
-                    classes: classesData.map(c => c.name)
-                };
-
-                // 1. 鎻愬彇绾︽潫
+                // 1. 提取约束
                 const resp = await fetch(`${API_BASE}/ai/extract-constraints`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, context })
+                    body: JSON.stringify({ prompt, context: { current_month: `${currentYear}-${String(currentMonth).padStart(2, '0')}` } })
                 });
 
                 if (!resp.ok) {
@@ -2068,25 +1577,22 @@
 
                 const data = await resp.json();
 
-                // 2. 鏄剧ず鎻愬彇缁撴灉
+                // 2. 显示提取结果
                 let html = '';
                 if (data.constraints) {
                     if (data.constraints.blocked_dates?.length) {
-                        html += '<div class="mb-1">馃搮 <strong>閬垮紑鏃ユ湡锛?/strong>' + data.constraints.blocked_dates.map(d => `${d.date}(${d.reason})`).join(', ') + '</div>';
+                        html += '<div class="mb-1">📅 <strong>避开日期：</strong>' + data.constraints.blocked_dates.map(d => `${d.date}(${d.reason})`).join(', ') + '</div>';
                     }
                     if (data.constraints.teacher_unavailable?.length) {
-                        html += '<div class="mb-1">馃毇 <strong>讲师请假?/strong>' + data.constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${t.dates.join(',')}`).join('; ') + '</div>';
-                    }
-                    if (data.constraints.homeroom_unavailable?.length) {
-                        html += '<div class="mb-1">馃毇 <strong>班主任请假：</strong>' + data.constraints.homeroom_unavailable.map(h => `${h.homeroom_name}: ${h.dates.join(',')}`).join('; ') + '</div>';
+                        html += '<div class="mb-1">🚫 <strong>请假讲师：</strong>' + data.constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${t.dates.join(',')}`).join('; ') + '</div>';
                     }
                 }
-                document.getElementById('constraints-content').innerHTML = html || '未识别到具体约束，将按默认规则排课。';
+                document.getElementById('constraints-content').innerHTML = html || '未识别到具体约束，将按默认规则排课';
                 resultBox.classList.remove('hidden');
 
                 const conflictMode = document.getElementById('conflict-mode').value;
 
-                // 3. 调用后端生成接口，应用约?
+                // 3. 调用后端生成接口，应用约束
                 const genResp = await fetch(`${API_BASE}/schedule/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2104,7 +1610,7 @@
                 // 4. 刷新课表
                 await loadMonthSchedule();
 
-                // 5. 显示排课结果反馈 (特别是未排课的班?
+                // 5. 显示排课结果反馈 (特别是未排课的班级)
                 let msg = `排课完成：${genResult.message}`;
                 const constraintsBox = document.getElementById('constraints-content');
 
@@ -2122,7 +1628,7 @@
                     warnHtml += `</ul></div>`;
 
                     constraintsBox.innerHTML += warnHtml;
-                    resultBox.classList.remove('hidden'); // 纭繚鏄剧ず
+                    resultBox.classList.remove('hidden'); // 确保显示
                     msg += `\n\n注意：有 ${genResult.skipped.length} 个班级未能安排档期，详情请见左侧提示面板。`;
                 }
 
@@ -2138,7 +1644,7 @@
             }
         }
 
-        // ==================== 资源配置 ====================
+        // ==================== 基础数据管理 ====================
         async function loadHomerooms() {
             try {
                 const resp = await fetch(`${API_BASE}/homerooms`);
@@ -2164,7 +1670,7 @@
         }
 
         async function deleteHomeroom(id) {
-            if (!confirm('确定删除该班主任吗？')) return;
+            if (!confirm('确定删除？')) return;
             await fetch(`${API_BASE}/homerooms/${id}`, { method: 'DELETE' });
             loadHomerooms();
         }
@@ -2194,14 +1700,14 @@
         }
 
         async function deleteTeacher(id) {
-            if (!confirm('确定删除该讲师吗？')) return;
+            if (!confirm('确定删除？')) return;
             await fetch(`${API_BASE}/teachers/${id}`, { method: 'DELETE' });
             loadTeachers();
         }
 
         async function loadCourses() {
             try {
-                // 并行加载课程和培训班类型(含课?
+                // 并行加载课程和培训班类型(含课题)
                 const [coursesResp, typesResp] = await Promise.all([
                     fetch(`${API_BASE}/courses`),
                     fetch(`${API_BASE}/training-types`)
@@ -2210,14 +1716,14 @@
                 const courses = await coursesResp.json();
                 const types = await typesResp.json();
 
-                // 1. 填充课题下拉?
+                // 1. 填充课题下拉框
                 const topicSelect = document.getElementById('new-course-topic');
                 const filterSelect = document.getElementById('course-topic-filter');
 
-                // 保存当前选中的筛选?
+                // 保存当前选中的筛选值
                 const currentFilterValue = filterSelect.value;
 
-                let optionsHtml = '<option value="">-- 课程--</option>';
+                let optionsHtml = '<option value="">-- 选择所属课题 --</option>';
                 let filterOptionsHtml = '<option value="">-- 全部课题 --</option>';
                 const topicMap = new Map(); // id -> {name, type_name}
 
@@ -2234,7 +1740,7 @@
                 topicSelect.innerHTML = optionsHtml;
                 filterSelect.innerHTML = filterOptionsHtml;
 
-                // 恢复之前的筛选?
+                // 恢复之前的筛选值
                 if (currentFilterValue) {
                     filterSelect.value = currentFilterValue;
                 }
@@ -2242,15 +1748,15 @@
                 // Store globally for filtering
                 window._courseData = { courses, topicMap };
 
-                // 2. 按课题分组展示课?
+                // 2. 按课题分组展示课程
                 const coursesByTopic = {};
                 const unassignedCourses = [];
 
-                // 读取筛器的?
+                // 读取筛选器的值
                 const filterTopicId = document.getElementById('course-topic-filter')?.value;
                 const filterTopicIdNum = filterTopicId ? parseInt(filterTopicId) : null;
 
-                // 按培训班类型再分?
+                // 按培训班类型再分组
                 const coursesByType = {};
 
                 courses.forEach(c => {
@@ -2281,7 +1787,7 @@
 
                     html += `
                         <div class="mb-4 border rounded-xl overflow-hidden shadow-sm">
-                            <!-- 培训班类型标?-->
+                            <!-- 培训班类型标题 -->
                             <div class="${color} text-white px-3 py-2 flex items-center justify-between cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="graduation-cap" class="w-4 h-4"></i>
@@ -2300,7 +1806,7 @@
                                     <div class="flex items-center gap-2 px-2 py-1 bg-slate-50 rounded-lg mb-2">
                                         <i data-lucide="book-open" class="w-3 h-3 text-slate-400"></i>
                                         <span class="text-xs font-semibold text-slate-600">${topicData.topicName}</span>
-                                        <span class="text-[10px] bg-slate-200 text-slate-500 px-1.5 rounded">${topicData.courses.length}闂</span>
+                                        <span class="text-[10px] bg-slate-200 text-slate-500 px-1.5 rounded">${topicData.courses.length}门</span>
                                     </div>
                                     <!-- 课程列表 -->
                                     <div class="space-y-1 pl-3">
@@ -2332,7 +1838,7 @@
                         <div class="mb-4 border border-dashed border-slate-300 rounded-xl overflow-hidden">
                             <div class="bg-slate-100 text-slate-500 px-3 py-2 flex items-center gap-2">
                                 <i data-lucide="alert-circle" class="w-4 h-4"></i>
-                                <span class="font-bold text-sm">未分类课</span>
+                                <span class="font-bold text-sm">未分类课程</span>
                                 <span class="text-[10px] bg-slate-200 px-1.5 rounded">${unassignedCourses.length}</span>
                             </div>
                             <div class="p-2 space-y-1">
@@ -2383,10 +1889,10 @@
                     document.getElementById('new-course-name').value = '';
                     loadCourses();
                 } else {
-                    alert('娣诲姞澶辫触');
+                    alert('添加失败');
                 }
             } catch (e) {
-                alert('娣诲姞閿欒: ' + e.message);
+                alert('添加错误: ' + e.message);
             }
         }
 
@@ -2404,12 +1910,3 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
-
-

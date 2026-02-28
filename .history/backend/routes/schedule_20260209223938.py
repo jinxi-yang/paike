@@ -3,100 +3,22 @@
 """
 from flask import Blueprint, jsonify, request
 from datetime import date, datetime, timedelta
-from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo
+from models import db, ClassSchedule, Class, MonthlyPlan
 import requests
 
 schedule_bp = Blueprint('schedule', __name__)
-
-
-def _month_range(year, month):
-    start_date = date(year, month, 1)
-    if month == 12:
-        end_date = date(year + 1, 1, 1)
-    else:
-        end_date = date(year, month + 1, 1)
-    return start_date, end_date
-
-
-def _guess_suggestion(reason):
-    text = reason or ''
-    if '节假日' in text:
-        return '建议顺延到下一周周六/周日'
-    if '请假' in text or '不可用' in text:
-        return '建议改用同课题备选讲师，或顺延一周'
-    if '班主任' in text:
-        return '建议调整到班主任可到场的下一周末'
-    if '撞课' in text:
-        return '建议同周内错开班级，或调整到下一周'
-    if '日期被排除' in text:
-        return '建议改到最近可用周末'
-    return '建议人工调整时间或师资后再发布'
-
-
-def _build_publish_checklist(year, month):
-    start_date, end_date = _month_range(year, month)
-    month_schedules = ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date
-    ).all()
-
-    unresolved = []
-    pending = []
-    resolved = []
-
-    for s in month_schedules:
-        if s.status == 'conflict':
-            reason = s.notes or '冲突原因未记录'
-            same_day_count = ClassSchedule.query.filter(
-                ClassSchedule.scheduled_date == s.scheduled_date
-            ).count()
-            unresolved.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None,
-                'reason': reason,
-                'suggestion': _guess_suggestion(reason),
-                'impact_scope': f'影响日期 {s.scheduled_date.isoformat()}，同日排课 {max(same_day_count - 1, 0)} 条'
-            })
-        elif s.status in ['planning', 'scheduled']:
-            pending.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None,
-                'reason': '未确认排课',
-                'suggestion': '建议发布前确认师资和时间',
-                'impact_scope': '仅影响当前班级'
-            })
-        else:
-            resolved.append({
-                'schedule_id': s.id,
-                'class_name': s.class_.name if s.class_ else None,
-                'topic_name': s.topic.name if s.topic else None,
-                'date': s.scheduled_date.isoformat() if s.scheduled_date else None
-            })
-
-    return {
-        'resolved': resolved,
-        'pending': pending,
-        'unresolved': unresolved
-    }
 
 # ==================== 节假日相关 ====================
 
 import os
 import json
 
-# 加载本地节假日缓存（使用相对于本文件的路径，保证从 backend 目录正确加载）
+# 加载本地节假日缓存
 _local_holiday_data = {}
 try:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    # holidays_2026.json 存放在 backend 根目录，而本文件位于 backend/routes
-    local_path = os.path.join(os.path.dirname(base_dir), 'holidays_2026.json')
-    with open(local_path, 'r', encoding='utf-8') as f:
+    with open('holidays_2026.json', 'r', encoding='utf-8') as f:
         _local_holiday_data = json.load(f)
-    print(f"Loaded {len(_local_holiday_data)} holiday records from local file: {local_path}")
+    print(f"Loaded {len(_local_holiday_data)} holiday records from local file")
 except Exception as e:
     print(f"Warning: Could not load local holiday file: {e}")
 
@@ -107,34 +29,21 @@ def is_holiday(check_date):
     检查某日期是否为节假日
     优先使用本地 holidays_2026.json
     其次使用 timor.tech API
-    最后兜底逻辑：默认为工作日（排课日）
+    最后兜底逻辑：周六日休息
     """
     if isinstance(check_date, str):
         check_date = date.fromisoformat(check_date)
     
     date_str = check_date.isoformat()
-    mm_dd = date_str[5:] # MM-DD
     
     # 1. 检查内存缓存
     if date_str in _holiday_cache:
         return _holiday_cache[date_str]
     
     # 2. 检查本地文件缓存 (优先)
-    # 尝试 YYYY-MM-DD
     if date_str in _local_holiday_data:
         record = _local_holiday_data[date_str]
-        # treat official holidays and any record that represents a make-up/adjusted workday as restricted
-        is_makeup = ('after' in record) or ('补班' in (record.get('name') or '')) or record.get('workday', False)
-        is_hol = bool(record.get('holiday', False) or is_makeup)
-        _holiday_cache[date_str] = is_hol
-        return is_hol
-
-    # 尝试 MM-DD (holidays_2026.json 格式)
-    if mm_dd in _local_holiday_data:
-        record = _local_holiday_data[mm_dd]
-        is_makeup = ('after' in record) or ('补班' in (record.get('name') or '')) or record.get('workday', False)
-        is_hol = bool(record.get('holiday', False) or is_makeup)
-        # 注意：这里我们存入缓存的是完整日期
+        is_hol = record.get('holiday', False)
         _holiday_cache[date_str] = is_hol
         return is_hol
 
@@ -152,13 +61,12 @@ def is_holiday(check_date):
         # print(f"节假日API调用失败: {e}") # 减少日志干扰
         pass
     
-    # 4. 兜底逻辑
-    # 商学院排课主要在周六日，所以默认这些天不是节假日（除非API已明确说是）
-    # 只有API或本地文件明确说是holiday: true，才是节假日
-    # 否则默认都是工作日（可以排课）
-    is_hol = False
-    _holiday_cache[date_str] = is_hol
-    return is_hol
+    # 4. 兜底逻辑：周日为节假日，周六视为工作日（排课日）
+    # weekday(): 0-4=Mon-Fri, 5=Sat, 6=Sun
+    # 如果API失败且无本地缓存，我们假设周六是可以排课的，只有周日休息
+    is_sunday = check_date.weekday() == 6
+    _holiday_cache[date_str] = is_sunday
+    return is_sunday
 
 def find_next_available_saturday(start_date):
     """找到下一个周六"""
@@ -401,78 +309,40 @@ def unmerge_class(schedule_id):
 
 # ==================== 月度计划发布 ====================
 
-@schedule_bp.route('/publish-checklist', methods=['GET'])
-def publish_checklist():
-    """发布前冲突处置清单"""
-    year = request.args.get('year', type=int)
-    month = request.args.get('month', type=int)
-    if not year or not month:
-        return jsonify({'error': 'Missing year/month'}), 400
-
-    checklist = _build_publish_checklist(year, month)
-    return jsonify({
-        'year': year,
-        'month': month,
-        'checklist': checklist
-    })
-
-
 @schedule_bp.route('/publish', methods=['POST'])
 def publish_month():
     """发布月度计划"""
     data = request.get_json()
     year = data.get('year')
     month = data.get('month')
-    force_publish = bool(data.get('force_publish', False))
-    force_note = (data.get('force_note') or '').strip()
-
-    checklist = _build_publish_checklist(year, month)
-    unresolved = checklist.get('unresolved', [])
-    if unresolved and not force_publish:
-        return jsonify({
-            'error': '存在无法自动解决的冲突，默认阻止发布',
-            'code': 'UNRESOLVED_CONFLICTS',
-            'checklist': checklist
-        }), 409
-
-    if force_publish and unresolved and not force_note:
-        return jsonify({
-            'error': '强制发布必须填写备注',
-            'code': 'FORCE_NOTE_REQUIRED'
-        }), 400
-
-    # find or create monthly plan
+    
+    # 查找或创建月度计划
     plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
     if not plan:
         plan = MonthlyPlan(year=year, month=month)
         db.session.add(plan)
-
+    
     plan.status = 'published'
     plan.published_at = datetime.now()
-
-    # update month schedules
-    start_date, end_date = _month_range(year, month)
-
+    
+    # 更新该月所有课程状态
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    
     ClassSchedule.query.filter(
         ClassSchedule.scheduled_date >= start_date,
         ClassSchedule.scheduled_date < end_date,
         ClassSchedule.status == 'scheduled'
     ).update({'status': 'confirmed'}, synchronize_session=False)
-
-    if force_publish and unresolved:
-        for item in unresolved:
-            sid = item.get('schedule_id')
-            schedule = ClassSchedule.query.get(sid)
-            if schedule:
-                schedule.notes = f"{schedule.notes or ''}\n[强制发布备注] {force_note}".strip()
-
+    
     db.session.commit()
-
+    
     return jsonify({
         'message': f'{year}年{month}月计划已发布',
-        'plan': plan.to_dict(),
-        'forced': force_publish,
-        'forced_conflict_count': len(unresolved) if force_publish else 0
+        'plan': plan.to_dict()
     })
 
 
@@ -591,8 +461,8 @@ def generate_schedule():
                 continue # 该班级已结课
                 
             # 找到合适的 Combo (Teacher)
-            # 获取该课题下的所有可用Combo，按ID倒序（最新）
-            combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id).order_by(TeacherCourseCombo.id.desc()).limit(2).all()
+            # 获取该课题下的所有可用Combo，按优先级排序
+            combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id).order_by(TeacherCourseCombo.priority.desc()).limit(2).all()
             
             combo1 = None
             combo2 = None
@@ -650,63 +520,6 @@ def generate_schedule():
                     
                     if homeroom_conflict:
                         current_conflict_reason = f"周六: 班主任撞课 ({homeroom_conflict.class_.name})"
-
-                    # NEW: Check homeroom_unavailable constraint (AI Constraints)
-                    if not current_conflict_reason:
-                        homeroom_unavailable = constraints.get('homeroom_unavailable', [])
-                        if cls.homeroom: # Ensure homeroom loaded
-                            hrm_name = cls.homeroom.name
-                            # Determine week range for candidate Saturday (Mon..Sun)
-                            week_monday = sat - timedelta(days=5)
-                            week_sunday = week_monday + timedelta(days=6)
-
-                            for u in homeroom_unavailable:
-                                if u.get('homeroom_name') != hrm_name:
-                                    continue
-
-                                # u['dates'] may be a list of ISO dates or date ranges; handle common formats
-                                dates = u.get('dates', [])
-                                parsed = []
-                                for item in dates:
-                                    if isinstance(item, str):
-                                        # single date
-                                        try:
-                                            parsed.append(date.fromisoformat(item))
-                                        except Exception:
-                                            # try to parse ranges like '2026-04-13~2026-04-17'
-                                            if '~' in item:
-                                                parts = item.split('~')
-                                                try:
-                                                    d1 = date.fromisoformat(parts[0])
-                                                    d2 = date.fromisoformat(parts[1])
-                                                    # expand range (inclusive)
-                                                    d = d1
-                                                    while d <= d2:
-                                                        parsed.append(d)
-                                                        d = d + timedelta(days=1)
-                                                except Exception:
-                                                    pass
-                                    elif isinstance(item, dict):
-                                        # permissive: {from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'}
-                                        f = item.get('from') or item.get('start')
-                                        t = item.get('to') or item.get('end')
-                                        try:
-                                            d1 = date.fromisoformat(f)
-                                            d2 = date.fromisoformat(t)
-                                            d = d1
-                                            while d <= d2:
-                                                parsed.append(d)
-                                                d = d + timedelta(days=1)
-                                        except Exception:
-                                            pass
-
-                                # If any parsed date falls within the candidate week, block this weekend
-                                for pd in parsed:
-                                    if week_monday <= pd <= week_sunday:
-                                        current_conflict_reason = f"周末: 班主任 {hrm_name} 在同一周请假/不可用"
-                                        break
-                                if current_conflict_reason:
-                                    break
 
                 # D. 检查讲师档期 (分别检查Day1和Day2)
                 unavailable = constraints.get('teacher_unavailable', [])
