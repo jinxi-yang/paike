@@ -315,7 +315,7 @@ RESTful API路由模块，每个资源独立一个文件。
 | 端点 | 方法 | 说明 |
 |-----|------|-----|
 | `/api/schedule/month/{year}/{month}` | GET | 获取月度排课 |
-| `/api/schedule/adjust` | POST | 调整单节课（换周/换组合） |
+| `/api/schedule/adjust` | POST | 调整单节课（换周/换组合）。请求体可包含 `combo_id` 和/或 `combo_id_2`，后者用于周日第二天安排。 |
 | `/api/schedule/merge` | POST | 合班操作 |
 | `/api/schedule/publish` | POST | 发布月度计划 |
 

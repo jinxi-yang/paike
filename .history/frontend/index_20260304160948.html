@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鍖楁竻鍟嗗闄?- 鏅鸿兘鎺掕绯荤粺</title>
+    <title>北清商学院- 智能排课系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -97,7 +97,7 @@
             }
         }
 
-        /* 鎷栨嫿鏍峰紡 */
+        /* 拖拽样式 */
         .draggable {
             cursor: grab;
             transition: all 0.2s ease;
@@ -126,12 +126,12 @@
 </head>
 
 <body class="h-screen flex flex-col overflow-hidden">
-    <!-- API 閰嶇疆 -->
+    <!-- API 配置 -->
     <script>
         const API_BASE = 'http://localhost:5000/api';
     </script>
 
-    <!-- 椤堕儴瀵艰埅鏍?-->
+    <!-- 顶部导航栏 -->
     <header class="h-16 bg-white border-b flex items-center justify-between px-8 z-50 shrink-0">
         <div class="flex items-center gap-4">
             <div
@@ -139,33 +139,33 @@
                 <i data-lucide="graduation-cap"></i>
             </div>
             <div>
-                <h1 class="text-lg font-bold leading-tight">鍖楁竻鍟嗗闄?<span class="text-blue-600">鏅鸿兘鎺掕</span></h1>
+                <h1 class="text-lg font-bold leading-tight">北清商学院<span class="text-blue-600">智能排课</span></h1>
                 <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Course Scheduling System</p>
             </div>
         </div>
         <nav class="flex gap-2 h-full">
             <button onclick="switchTab('scheduler')" id="tab-scheduler"
                 class="px-6 flex items-center gap-2 active-tab font-semibold transition-all">
-                <i data-lucide="calendar-range" class="w-4 h-4"></i> 鏅鸿兘璇剧▼缂栨帓
+                <i data-lucide="calendar-range" class="w-4 h-4"></i> 智能课程编排
             </button>
             <button onclick="switchTab('manage')" id="tab-manage"
                 class="px-6 flex items-center gap-2 text-slate-500 hover:text-blue-600 font-semibold transition-all">
-                <i data-lucide="settings" class="w-4 h-4"></i> 鍩虹鏁版嵁绠＄悊
+                <i data-lucide="settings" class="w-4 h-4"></i> 资源配置
             </button>
         </nav>
         <div class="flex items-center gap-4">
-            <span class="text-sm text-slate-500" id="connection-status">杩炴帴涓?..</span>
+            <span class="text-sm text-slate-500" id="connection-status">连接中...</span>
         </div>
     </header>
 
     <main class="flex-1 overflow-hidden p-6 relative">
-        <!-- 瑙嗗浘涓€锛氭櫤鑳借绋嬬紪鎺?-->
+        <!-- 视图一：智能课程编排 -->
         <div id="view-scheduler" class="h-full flex flex-col gap-6">
-            <!-- 椤堕儴锛氬煿璁彮绫诲瀷鍗＄墖 -->
+            <!-- 顶部：培训班类型卡片 -->
             <div class="glass-card p-4 overflow-hidden">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="font-bold text-slate-700 text-sm flex items-center gap-2">
-                        <i data-lucide="layers" class="w-4 h-4 text-blue-600"></i> 鍩硅鐝被鍨嬶紙鐐瑰嚮杩涘叆鐝骇绠＄悊锛?
+                        <i data-lucide="layers" class="w-4 h-4 text-blue-600"></i> 培训班类型（点击进入班级管理）
                     </h3>
                     <div class="flex items-center gap-3">
                         <span id="training-type-count" class="text-xs text-slate-400"></span>
@@ -174,63 +174,63 @@
                 <div id="training-types-container" class="flex gap-4 overflow-x-auto pb-4 scroll-hide">
                     <div class="flex items-center justify-center p-8 text-slate-400">
                         <span class="loading"></span>
-                        <span class="ml-2">鍔犺浇涓?..</span>
+                        <span class="ml-2">加载中...</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 涓嬮儴锛氭帓璇惧伐浣滃尯 -->
+            <!-- 下部：排课工作区 -->
             <div class="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
-                <!-- 宸︿晶 Prompt Center -->
+                <!-- 左侧 Prompt Center -->
                 <div class="col-span-3 glass-card flex flex-col p-5 overflow-y-auto">
                     <h3 class="font-bold text-slate-700 mb-6 flex items-center gap-2">
-                        <i data-lucide="terminal" class="w-4 h-4 text-blue-600"></i> AI 鎺掕鍔╂墜
+                        <i data-lucide="terminal" class="w-4 h-4 text-blue-600"></i> AI 排课助手
                     </h3>
                     <div class="space-y-6 flex-1">
                         <section>
 
                             <section>
                                 <label
-                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">鎺掕绛栫暐</label>
+                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">排课策略</label>
                                 <div class="mt-2 space-y-2">
                                     <label
                                         class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border text-xs cursor-pointer hover:bg-slate-100">
                                         <div class="flex flex-col">
-                                            <span class="font-bold text-slate-700">鍐茬獊澶勭悊</span>
-                                            <span class="text-[10px] text-slate-400">璧勬簮琚崰鐢ㄦ垨璇峰亣鏃?/span>
+                                            <span class="font-bold text-slate-700">策略</span>
+                                            <span class="text-[10px] text-slate-400">资源被占用或请假</span>
                                         </div>
                                         <select id="conflict-mode" class="bg-white border text-xs rounded p-1">
-                                            <option value="postpone">鑷姩椤哄欢 (鎺ㄨ崘)</option>
-                                            <option value="mark">淇濈暀浣嶇疆骞舵爣璁?/option>
+                                            <option value="postpone">自动顺延 (推荐)</option>
+                                            <option value="mark">保留位置并标记</option>
                                         </select>
                                     </label>
                                 </div>
                             </section>
                             <section class="flex-1 flex flex-col pt-4">
                                 <label
-                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">瀹氬埗鎻愮ず璇?/label>
+                                    class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">定制提示</label>
                                 <textarea id="prompt-input"
                                     class="w-full flex-1 mt-2 border rounded-xl p-3 text-xs focus:ring-2 focus:ring-blue-500 outline-none leading-relaxed min-h-[120px]"
-                                    placeholder="渚嬪锛?鏈?5鏃ュ寳浜湁澶у瀷鍖荤枟宄颁細锛屽尰鐤楃彮閭ｅぉ涓嶈兘涓婅銆傜帇鑺宠€佸笀3鏈?1-22鏃ヨ鍋囦簡銆?></textarea>
+                                    placeholder="例如：5月北京有大型医疗峰会，医疗班那天不能上课。王芳老师3月1-22日请假了"></textarea>
                             </section>
                             <button onclick="smartGenerateSchedule(event)" id="smart-generate-btn"
                                 class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 transition-all">
-                                <i data-lucide="sparkles" class="w-4 h-4"></i> 鏅鸿兘閲嶆柊鐢熸垚璇捐〃
+                                <i data-lucide="sparkles" class="w-4 h-4"></i> 智能重新生成课表
                             </button>
                             <div id="constraints-result"
                                 class="hidden bg-blue-50 p-3 rounded-xl border border-blue-200 text-xs space-y-2 mt-4">
-                                <div class="font-bold text-blue-700">AI 鎻愬彇鍒扮殑绾︽潫锛?/div>
+                                <div class="font-bold text-blue-700">AI 提取到的约束</div>
                                 <div id="constraints-content"></div>
                             </div>
                     </div>
                 </div>
 
-                <!-- 鍙充晶锛氭湀搴︽帓璇剧湅鏉?-->
+                <!-- 右侧：月度排课看板 -->
                 <div class="col-span-9 glass-card flex flex-col overflow-hidden">
                     <div class="p-4 border-b flex justify-between items-center bg-slate-50/50">
                         <div class="flex items-center gap-6">
                             <div class="flex items-center gap-3">
-                                <h4 id="month-display" class="font-bold text-slate-800 text-lg">2026骞?鏈?/h4>
+                                <h4 id="month-display" class="font-bold text-slate-800 text-lg">2026年</h4>
                                 <div class="flex bg-white border rounded-lg overflow-hidden shadow-sm">
                                     <button onclick="changeMonth(-1)" class="px-2 py-1 hover:bg-slate-50 border-r"><i
                                             data-lucide="chevron-left" class="w-4 h-4"></i></button>
@@ -239,41 +239,41 @@
                                 </div>
                             </div>
                             <div id="month-status"
-                                class="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-bold">鑽夌
+                                class="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-bold">预排中
                             </div>
-                            <!-- 瑙嗗浘鍒囨崲 -->
+                            <!-- 视图切换 -->
                             <div class="flex bg-slate-100 p-1 rounded-lg">
                                 <button onclick="switchViewMode('week')" id="view-mode-week"
-                                    class="px-3 py-1 rounded-md text-xs font-bold bg-white text-blue-600 shadow-sm transition-all">鍛ㄨ鍥?/button>
+                                    class="px-3 py-1 rounded-md text-xs font-bold bg-white text-blue-600 shadow-sm transition-all">周度</button>
                                 <button onclick="switchViewMode('month')" id="view-mode-month"
-                                    class="px-3 py-1 rounded-md text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">鏈堣鍥?/button>
+                                    class="px-3 py-1 rounded-md text-xs font-bold text-slate-500 hover:text-slate-700 transition-all">月度</button>
                             </div>
                         </div>
                         <div class="flex gap-4 items-center">
                             <div id="merge-controls" class="flex gap-2">
                                 <button onclick="toggleMergeMode()" id="merge-mode-btn"
                                     class="px-3 py-1.5 text-xs font-bold bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200 transition-all flex items-center gap-1">
-                                    <i data-lucide="layers" class="w-3 h-3"></i> 鍚堢彮妯″紡
+                                    <i data-lucide="layers" class="w-3 h-3"></i> 合班模式
                                 </button>
                                 <button onclick="executeMerge()" id="confirm-merge-btn"
                                     class="hidden px-3 py-1.5 text-xs font-bold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all flex items-center gap-1 shadow-md">
-                                    <i data-lucide="check" class="w-3 h-3"></i> 纭鍚堝苟 <span id="merge-count"
+                                    <i data-lucide="check" class="w-3 h-3"></i> 确认合并 <span id="merge-count"
                                         class="bg-white/20 px-1.5 rounded text-[9px]">0</span>
                                 </button>
                             </div>
                             <div class="h-4 w-px bg-slate-200"></div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
-                                    class="w-2.5 h-2.5 bg-red-500 rounded-full"></span> 鍐茬獊</div>
+                                    class="w-2.5 h-2.5 bg-red-500 rounded-full"></span> 冲突</div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
-                                    class="w-2.5 h-2.5 bg-green-500 rounded-full"></span> 宸叉帓</div>
+                                    class="w-2.5 h-2.5 bg-green-500 rounded-full"></span> 已排</div>
                             <div class="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400"><span
-                                    class="w-2.5 h-2.5 bg-purple-500 rounded-full"></span> 鍚堢彮</div>
+                                    class="w-2.5 h-2.5 bg-purple-500 rounded-full"></span> 合班</div>
                         </div>
                     </div>
                     <div id="schedule-container" class="flex-1 p-6 overflow-y-auto scroll-hide bg-slate-50/30">
                         <div class="flex items-center justify-center h-full text-slate-400">
                             <span class="loading"></span>
-                            <span class="ml-2">鍔犺浇鎺掕鏁版嵁...</span>
+                            <span class="ml-2">加载排课数据...</span>
                         </div>
                     </div>
 
@@ -281,142 +281,142 @@
             </div>
         </div>
 
-        <!-- 瑙嗗浘浜岋細鍩虹鏁版嵁绠＄悊锛堢畝鍖栫増锛?-->
+        <!-- 视图二：基础数据管理（简化版） -->
         <div id="view-manage" class="hidden h-full grid grid-cols-3 gap-6">
-            <!-- 鐝富浠荤鐞?-->
+            <!-- 班主任管理 -->
             <div class="glass-card flex flex-col overflow-hidden">
                 <div class="p-4 border-b bg-indigo-600 text-white">
-                    <h3 class="font-bold">鐝富浠荤鐞?/h3>
+                    <h3 class="font-bold">班主任管理</h3>
                 </div>
                 <div id="homerooms-list" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
                 <div class="p-4 border-t flex gap-2">
-                    <input id="new-homeroom-name" placeholder="鐝富浠诲鍚? class="flex-1 text-sm p-2 border rounded-lg">
+                    <input id="new-homeroom-name" placeholder="班主任姓名" class="flex-1 text-sm p-2 border rounded-lg">
                     <button onclick="addHomeroom()"
-                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold">添加</button>
                 </div>
             </div>
-            <!-- 璁插笀绠＄悊 -->
+            <!-- 讲师管理 -->
             <div class="glass-card flex flex-col overflow-hidden">
                 <div class="p-4 border-b bg-blue-600 text-white">
-                    <h3 class="font-bold">鎺堣璁插笀绠＄悊</h3>
+                    <h3 class="font-bold">授课讲师管理</h3>
                 </div>
                 <div id="teachers-list" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
                 <div class="p-4 border-t flex gap-2">
-                    <input id="new-teacher-name" placeholder="璁插笀濮撳悕" class="flex-1 text-sm p-2 border rounded-lg">
+                    <input id="new-teacher-name" placeholder="讲师姓名" class="flex-1 text-sm p-2 border rounded-lg">
                     <button onclick="addTeacher()"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">添加</button>
                 </div>
             </div>
-            <!-- 璇剧▼绠＄悊 -->
+            <!-- 课程管理 -->
             <div class="glass-card flex flex-col overflow-hidden">
                 <div class="p-4 border-b bg-green-600 text-white">
-                    <h3 class="font-bold">璇剧▼绠＄悊</h3>
+                    <h3 class="font-bold">课程管理</h3>
                 </div>
                 <div class="p-2 border-b bg-slate-50">
                     <select id="course-topic-filter" class="w-full text-xs p-2 border rounded-lg"
                         onchange="filterCoursesByTopic()">
-                        <option value="">-- 鍏ㄩ儴璇鹃 --</option>
+                        <option value="">-- 全部课题 --</option>
                     </select>
                 </div>
                 <div id="courses-list" class="flex-1 p-4 overflow-y-auto space-y-2"></div>
                 <div class="p-4 border-t flex flex-col gap-2">
                     <select id="new-course-topic" class="w-full text-xs p-2 border rounded-lg">
-                        <option value="">-- 閫夋嫨鎵€灞炶棰?--</option>
+                        <option value="">-- 选择课题 --</option>
                     </select>
                     <div class="flex gap-2">
-                        <input id="new-course-name" placeholder="璇剧▼鍚嶇О" class="flex-1 text-sm p-2 border rounded-lg">
+                        <input id="new-course-name" placeholder="课程名称" class="flex-1 text-sm p-2 border rounded-lg">
                         <button onclick="addCourse()"
-                            class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold">娣诲姞</button>
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold">添加</button>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 鍩硅鐝鎯呭脊绐?-->
+    <!-- 培训班详情弹窗 -->
     <div id="training-detail-modal" class="modal-overlay" onclick="if(event.target==this) closeTrainingDetail()">
         <div class="modal-content glass-card w-[900px] max-h-[85vh] overflow-hidden flex flex-col">
             <div class="p-6 border-b bg-blue-600 text-white flex justify-between items-center">
                 <div>
-                    <h3 id="training-detail-title" class="text-xl font-bold">鍩硅鐝鎯?/h3>
-                    <p class="text-xs opacity-80 mt-1">绠＄悊鐝骇鍜岃棰橀『搴?/p>
+                    <h3 id="training-detail-title" class="text-xl font-bold">培训班详情</h3>
+                    <p class="text-xs opacity-80 mt-1">管理班级和课题顺序</p>
                 </div>
                 <button onclick="closeTrainingDetail()" class="hover:bg-blue-700 p-2 rounded-full"><i data-lucide="x"
                         class="w-6 h-6"></i></button>
             </div>
             <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                <!-- 璇鹃鍒楄〃 -->
+                <!-- 课题列表 -->
                 <div>
                     <h4 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
-                        <i data-lucide="list-ordered" class="w-4 h-4 text-blue-600"></i> 璇鹃鍒楄〃锛堝叡8鑺傦級
+                        <i data-lucide="list-ordered" class="w-4 h-4 text-blue-600"></i> 课题列表（共8节）
                     </h4>
                     <div id="topics-list" class="space-y-2"></div>
                 </div>
-                <!-- 鐝骇绠＄悊 -->
+                <!-- 班级管理 -->
                 <div class="bg-white p-4 rounded-xl border">
-                    <h4 class="font-bold text-slate-700 mb-3">鐝骇绠＄悊</h4>
+                    <h4 class="font-bold text-slate-700 mb-3">班级管理</h4>
                     <div id="classes-list" class="space-y-2 mb-4"></div>
                     <button onclick="openAddClassModal()"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">+ 鏂板鐝骇</button>
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">+ 新增班级</button>
                 </div>
             </div>
             <div class="p-6 border-t bg-slate-50 flex justify-end">
                 <button onclick="closeTrainingDetail()"
-                    class="px-6 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍏抽棴</button>
+                    class="px-6 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">关闭</button>
             </div>
         </div>
     </div>
 
-    <!-- 鏂板鐝骇寮圭獥 -->
+    <!-- 新增班级弹窗 -->
     <div id="add-class-modal" class="modal-overlay" onclick="if(event.target==this) closeAddClassModal()">
         <div class="modal-content glass-card w-[520px]">
             <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
-                <h3 class="font-bold">鏂板鐝骇</h3>
+                <h3 class="font-bold">新增班级</h3>
                 <button onclick="closeAddClassModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
             </div>
             <div class="p-4 space-y-4">
                 <div>
-                    <label class="text-xs font-bold">鐝骇鍚嶇О</label>
-                    <input id="new-class-name" class="w-full text-sm p-2 border rounded-lg mt-1"
-                        placeholder="渚嬪锛氶琚栧闀挎湰绉戠彮 1鏈?>
+                    <label class="text-xs font-bold">班级名称</label>
+                    <input id="new-class-name" class="w-full text-sm p-2 border rounded-lg mt-1" placeholder="输入班级名称">
                 </div>
                 <div>
-                    <label class="text-xs font-bold">棣栨涓婅鏃ユ湡</label>
+                    <label class="text-xs font-bold">首次上课日期</label>
                     <input id="new-class-date" type="date" class="w-full text-sm p-2 border rounded-lg mt-1">
                 </div>
                 <div>
-                    <label class="text-xs font-bold">鐝富浠?/label>
+                    <label class="text-xs font-bold">班主任</label>
                     <select id="new-class-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 閫夋嫨鐝富浠?--</option>
+                        <option value="">-- 选择班主任 --</option>
                     </select>
                 </div>
-                                <div id="class-precheck-panel" class="border rounded-lg bg-slate-50 p-3 hidden">
+                <div id="class-precheck-panel" class="border rounded-lg bg-slate-50 p-3 hidden">
                     <div class="flex items-center justify-between mb-2">
                         <div class="text-xs font-bold text-slate-700">排班预检</div>
-                        <button type="button" onclick="runClassPrecheck()" class="text-[11px] text-blue-600 hover:underline">重新预检</button>
+                        <button type="button" onclick="runClassPrecheck()"
+                            class="text-[11px] text-blue-600 hover:underline">重新预检</button>
                     </div>
                     <div id="class-precheck-loading" class="hidden text-xs text-slate-500">正在预检，请稍候...</div>
                     <div id="class-precheck-content" class="text-xs text-slate-700"></div>
                 </div>
-                <p class="text-[10px] text-slate-400">绯荤粺灏嗚嚜鍔ㄦ寜姣?鍛ㄤ竴鑺傝鐨勮鍒欑敓鎴?鑺傝鐨勯鎺掕琛?/p>
+                <p class="text-[10px] text-slate-400">系统将自动按课纲生成课程预排建议</p>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3">
                 <button onclick="closeAddClassModal()"
-                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍙栨秷</button>
+                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
                 <button onclick="createClass()"
-                    class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">鍒涘缓骞剁敓鎴愯琛?/button>
+                    class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">创建并生成课程</button>
             </div>
         </div>
     </div>
 
-    <!-- 鐝骇璇捐〃寮圭獥 -->
+    <!-- 班级课表弹窗 -->
     <div id="class-schedule-modal" class="modal-overlay" onclick="if(event.target==this) closeClassSchedule()">
         <div class="modal-content glass-card w-[900px] max-h-[85vh] overflow-hidden flex flex-col">
             <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
                 <div>
-                    <h3 id="class-schedule-title" class="font-bold">鐝骇璇捐〃</h3>
-                    <p class="text-xs opacity-80">鏌ョ湅鍜岃皟鏁寸彮绾ц绋嬪畨鎺?/p>
+                    <h3 id="class-schedule-title" class="font-bold">班级课表</h3>
+                    <p class="text-xs opacity-80">查看和调整班级课程安排</p>
                 </div>
                 <button onclick="closeClassSchedule()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
@@ -424,88 +424,86 @@
             <div id="class-schedule-content" class="flex-1 p-4 overflow-y-auto space-y-3"></div>
             <div class="p-4 border-t bg-slate-50 flex justify-end">
                 <button onclick="closeClassSchedule()"
-                    class="px-6 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍏抽棴</button>
+                    class="px-6 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">关闭</button>
             </div>
         </div>
     </div>
 
-    <!-- 璋冩暣璇剧▼寮圭獥 -->
+    <!-- 调整课程弹窗 -->
     <div id="adjust-schedule-modal" class="modal-overlay" onclick="if(event.target==this) closeAdjustModal()">
         <div class="modal-content glass-card w-[500px]">
             <div class="p-4 border-b bg-indigo-600 text-white flex justify-between items-center">
-                <h3 class="font-bold">璋冩暣璇剧▼</h3>
+                <h3 class="font-bold">调整课程</h3>
                 <button onclick="closeAdjustModal()" class="p-2 rounded-full hover:bg-indigo-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
             </div>
             <div class="p-4 space-y-4">
                 <div id="adjust-schedule-info" class="p-3 bg-slate-50 rounded-lg text-sm"></div>
                 <div>
-                    <label class="text-xs font-bold">璋冩暣鏃ユ湡</label>
+                    <label class="text-xs font-bold">调整日期</label>
                     <input id="adjust-new-date" type="date" class="w-full text-sm p-2 border rounded-lg mt-1">
                 </div>
                 <div>
-                    <label class="text-xs font-bold">閫夋嫨鏁?璇剧粍鍚?/label>
+                    <label class="text-xs font-bold">选择教课组合</label>
                     <select id="adjust-combo" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 閫夋嫨缁勫悎 --</option>
+                        <option value="">-- 选择组合 --</option>
                     </select>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="moveScheduleWeek('prev')"
-                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">鈫?
-                        涓婁竴鍛?/button>
+                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">上移一周</button>
                     <button onclick="moveScheduleWeek('next')"
-                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">涓嬩竴鍛?
-                        鈫?/button>
+                        class="flex-1 px-4 py-2 bg-slate-100 rounded-lg text-sm font-bold hover:bg-slate-200">下移一周</button>
                 </div>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3">
                 <button onclick="closeAdjustModal()"
-                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍙栨秷</button>
+                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
                 <button onclick="saveAdjustment()"
-                    class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold">淇濆瓨璋冩暣</button>
+                    class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold">保存调整</button>
             </div>
         </div>
     </div>
 
-    <!-- 鏂板鏁?璇剧粍鍚堝脊绐?-->
+    <!-- 鏂板鏁?课组合弹?-->
     <div id="add-combo-modal" class="modal-overlay" onclick="if(event.target==this) closeAddComboModal()">
         <div class="modal-content glass-card w-[500px]">
             <div class="p-4 border-b bg-green-600 text-white flex justify-between items-center">
-                <h3 class="font-bold">閰嶇疆鏁?璇剧粍鍚?/h3>
+                <h3 class="font-bold">配置教课组合</h3>
                 <button onclick="closeAddComboModal()" class="p-2 rounded-full hover:bg-green-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
             </div>
             <div class="p-4 space-y-4">
                 <input type="hidden" id="new-combo-topic-id">
                 <div>
-                    <label class="text-xs font-bold">閫夋嫨璁插笀</label>
+                    <label class="text-xs font-bold">选择教师</label>
                     <select id="new-combo-teacher" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 閫夋嫨璁插笀 --</option>
+                        <option value="">-- 选择教师 --</option>
                     </select>
                 </div>
                 <div>
-                    <label class="text-xs font-bold">閫夋嫨璇剧▼</label>
+                    <label class="text-xs font-bold">选择课程</label>
                     <select id="new-combo-course" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 閫夋嫨璇剧▼ --</option>
+                        <option value="">-- 选择课程 --</option>
                     </select>
                 </div>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3">
                 <button onclick="closeAddComboModal()"
-                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍙栨秷</button>
+                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
                 <button onclick="createCombo()"
-                    class="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold">淇濆瓨閰嶇疆</button>
+                    class="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold">保存配置</button>
             </div>
         </div>
     </div>
 
-    <!-- 鍙戝竷棰勮寮圭獥 -->
+    <!-- 发布预览弹窗 -->
     <div id="publish-preview-modal" class="modal-overlay" onclick="if(event.target==this) closePublishPreview()">
         <div class="modal-content glass-card w-[980px] max-h-[85vh] overflow-hidden flex flex-col">
             <div class="p-4 border-b bg-green-600 text-white flex justify-between items-center">
                 <div>
-                    <h3 class="font-bold">鍙戝竷鍓嶉瑙?/h3>
-                    <p class="text-xs opacity-80 mt-1">鎸夊懆鍏?鍛ㄦ棩鏃ュ巻鏍煎紡棰勮鏈湀鎺掕</p>
+                    <h3 class="font-bold">发布前预览</h3>
+                    <p class="text-xs opacity-80 mt-1">按周日日历格式预览本月排课</p>
                 </div>
                 <button onclick="closePublishPreview()" class="p-2 rounded-full hover:bg-green-700"><i data-lucide="x"
                         class="w-5 h-5"></i></button>
@@ -515,34 +513,34 @@
                 <div id="publish-force-controls" class="hidden flex-1">
                     <label class="flex items-center gap-2 text-xs text-slate-700 mb-2">
                         <input type="checkbox" id="force-publish-all" class="rounded border-slate-300">
-                        鍏佽寮哄埗鍙戝竷鎵€鏈夋棤娉曡В鍐冲啿绐?
+                        允许强制发布所有无法解决冲突的班级
                     </label>
                     <textarea id="force-publish-note" class="w-full border rounded-lg p-2 text-xs" rows="2"
-                        placeholder="寮哄埗鍙戝竷澶囨敞锛堝繀濉級"></textarea>
+                        placeholder="强制发布备注（必填）"></textarea>
                     <div id="publish-block-tip" class="text-[11px] text-red-600 mt-1 hidden"></div>
                 </div>
                 <button onclick="closePublishPreview()"
-                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">鍙栨秷</button>
+                    class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500">取消</button>
                 <button id="publish-confirm-btn" onclick="executePublishMonth()"
-                    class="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold">纭鍙戝竷</button>
+                    class="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold">确认发布</button>
             </div>
         </div>
     </div>
 
     <script>
-        // ==================== 鍏ㄥ眬鐘舵€?====================
+        // ==================== 全局状态 ====================
         let currentYear = 2026;
         let currentMonth = 3;
         let currentTrainingTypeId = null;
         let currentClassId = null;
         let currentScheduleId = null;
-        // 鍚堢彮妯″紡鐘舵€?
+        // 合班模式状态
         let isMergeMode = false;
         let selectedMergeIds = new Set();
         let publishChecklistState = { unresolved: [], pending: [], resolved: [] };
         let classPrecheckState = null;
 
-        // ==================== 鍒濆鍖?====================
+        // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
             checkConnection();
@@ -555,16 +553,16 @@
             try {
                 const resp = await fetch(`${API_BASE}/health`);
                 if (resp.ok) {
-                    document.getElementById('connection-status').innerHTML = '<span class="text-green-600">鈼?宸茶繛鎺?/span>';
+                    document.getElementById('connection-status').innerHTML = '<span class="text-green-600">·已连接</span>';
                 } else {
-                    document.getElementById('connection-status').innerHTML = '<span class="text-red-600">鈼?杩炴帴澶辫触</span>';
+                    document.getElementById('connection-status').innerHTML = '<span class="text-red-600">·连接失败</span>';
                 }
             } catch (e) {
-                document.getElementById('connection-status').innerHTML = '<span class="text-red-600">鈼?鍚庣鏈惎鍔?/span>';
+                document.getElementById('connection-status').innerHTML = '<span class="text-red-600">·后端未启动</span>';
             }
         }
 
-        // ==================== 瑙嗗浘鍒囨崲 ====================
+        // ==================== 视图切换 ====================
         function switchTab(tab) {
             document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden'));
             document.getElementById(`view-${tab}`).classList.remove('hidden');
@@ -581,15 +579,15 @@
             }
         }
 
-        // ==================== 鍩硅鐝被鍨?====================
+        // ==================== 培训班类型 ====================
         async function loadTrainingTypes() {
             try {
                 const resp = await fetch(`${API_BASE}/training-types`);
                 const types = await resp.json();
                 renderTrainingTypes(types);
-                document.getElementById('training-type-count').textContent = `鍏?${types.length} 绉嶅煿璁彮`;
+                document.getElementById('training-type-count').textContent = `共${types.length} 种培训班`;
             } catch (e) {
-                document.getElementById('training-types-container').innerHTML = '<div class="text-red-500 p-4">鍔犺浇澶辫触锛岃妫€鏌ュ悗绔湇鍔?/div>';
+                document.getElementById('training-types-container').innerHTML = '<div class="text-red-500 p-4">加载失败，请检查后端服务</div>';
             }
         }
 
@@ -602,14 +600,14 @@
                     </div>
                     <p class="text-[10px] text-slate-500 mb-2">${t.description || ''}</p>
                     <div class="flex justify-between text-[9px] text-slate-400">
-                        <span>8涓棰?/span>
-                        <span class="text-blue-600 font-bold">鐐瑰嚮绠＄悊 鈫?/span>
+                        <span>8个课题</span>
+                        <span class="text-blue-600 font-bold">点击管理</span>
                     </div>
                 </div>
             `).join('');
         }
 
-        // ==================== 鍩硅鐝鎯?====================
+        // ==================== 培训班详情 ====================
         async function openTrainingDetail(id) {
             currentTrainingTypeId = id;
             try {
@@ -621,7 +619,7 @@
                 document.getElementById('training-detail-modal').classList.add('active');
                 lucide.createIcons();
             } catch (e) {
-                alert('鍔犺浇澶辫触');
+                alert('加载失败');
             }
         }
 
@@ -638,15 +636,15 @@
                             <span class="w-8 h-8 rounded-full ${t.is_fixed ? 'bg-blue-600' : 'bg-slate-400'} text-white flex items-center justify-center text-sm font-bold">${t.sequence}</span>
                             <div>
                                 <div class="font-bold text-slate-700">${t.name}</div>
-                                ${t.is_fixed ? '<span class="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded">鍥哄畾璇鹃</span>' : ''}
+                                ${t.is_fixed ? '<span class="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded">固定课题</span>' : ''}
                             </div>
                         </div>
                         <button onclick="openAddComboModal(${t.id})" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1">
-                            <i data-lucide="plus" class="w-3 h-3"></i> 閰嶇疆鏁?璇?
+                            <i data-lucide="plus" class="w-3 h-3"></i> 配置课程组合
                         </button>
                     </div>
                     
-                    <!-- 鏁?璇剧粍鍚堝垪琛?-->
+                    <!-- 课程组合列表 -->
                     <div class="space-y-2 pl-11">
                         ${(t.combos || []).length > 0 ? (t.combos || []).map(c => `
                             <div class="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-lg text-sm hover:border-blue-200 transition-all group">
@@ -659,7 +657,7 @@
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
                             </div>
-                        `).join('') : '<div class="text-[10px] text-slate-400 italic">鏆傛棤鏁?璇剧粍鍚堥厤缃?/div>'}
+                        `).join('') : '<div class="text-[10px] text-slate-400 italic">暂无课程组合配置</div>'}
                     </div>
                 </div>
             `).join('');
@@ -672,14 +670,14 @@
                 const classes = await resp.json();
                 renderClasses(classes);
             } catch (e) {
-                console.error('鍔犺浇鐝骇澶辫触', e);
+                console.error('加载班级失败', e);
             }
         }
 
         function renderClasses(classes) {
             const container = document.getElementById('classes-list');
             if (classes.length === 0) {
-                container.innerHTML = '<div class="text-slate-400 text-sm p-3">鏆傛棤鐝骇锛岃鐐瑰嚮涓嬫柟鎸夐挳鏂板</div>';
+                container.innerHTML = '<div class="text-slate-400 text-sm p-3">暂无班级，请点击下方按钮新增</div>';
                 return;
             }
             container.innerHTML = classes.map(c => `
@@ -689,25 +687,25 @@
                         <div class="text-[10px] text-slate-500">班主任: ${c.homeroom_name || '未分配'} | 开始: ${c.start_date || '未设置'}</div>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="openClassScheduleModal(${c.id})" class="text-blue-600 text-xs font-bold hover:underline">鏌ョ湅璇捐〃</button>
-                        <button onclick="deleteClass(${c.id})" class="text-red-500 text-xs hover:underline">鍒犻櫎</button>
+                        <button onclick="openClassScheduleModal(${c.id})" class="text-blue-600 text-xs font-bold hover:underline">查看课表</button>
+                        <button onclick="deleteClass(${c.id})" class="text-red-500 text-xs hover:underline">删除</button>
                     </div>
                 </div>
             `).join('');
         }
 
-        // ==================== 鏂板鐝骇 ====================
+        // ==================== 新增班级 ====================
         async function openAddClassModal() {
-            // 鍔犺浇鐝富浠诲垪琛?
+            // 加载班主任列表
             try {
                 const resp = await fetch(`${API_BASE}/homerooms`);
                 const homerooms = await resp.json();
                 const select = document.getElementById('new-class-homeroom');
-                select.innerHTML = '<option value="">-- 閫夋嫨鐝富浠?--</option>' +
+                select.innerHTML = '<option value="">-- 选择班主任--</option>' +
                     homerooms.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
             } catch (e) { }
 
-            // 璁剧疆榛樿鏃ユ湡涓轰笅鍛ㄥ叚
+            // 设置默认日期为下周六
             const today = new Date();
             const daysUntilSat = (6 - today.getDay() + 7) % 7 || 7;
             const nextSat = new Date(today.getTime() + daysUntilSat * 24 * 60 * 60 * 1000);
@@ -880,16 +878,16 @@
                 });
 
                 if (resp.ok) {
-                    alert('鐝骇鍒涘缓鎴愬姛');
+                    alert('班级创建成功');
                     closeAddClassModal();
                     await loadClasses(currentTrainingTypeId);
                     loadMonthSchedule();
                 } else {
                     const err = await resp.json();
-                    alert('鍒涘缓澶辫触: ' + (err.error || '鏈煡閿欒'));
+                    alert('创建失败: ' + (err.error || '未知错误'));
                 }
             } catch (e) {
-                alert('鍒涘缓澶辫触: ' + e.message);
+                alert('创建失败: ' + e.message);
             }
         }
 
@@ -904,50 +902,50 @@
             }
         }
 
-        // ==================== 鏁?璇剧粍鍚堢鐞?====================
+        // ==================== 教课组合管理 ====================
         async function openAddComboModal(topicId) {
             document.getElementById('new-combo-topic-id').value = topicId;
 
-            // 鍔犺浇璁插笀鍜岃绋?
+            // 加载讲师和课程
             try {
-                // 鍔犺浇涓?
+                // 加载数据
                 const [teachersResp, coursesResp] = await Promise.all([
                     fetch(`${API_BASE}/teachers`),
                     fetch(`${API_BASE}/courses`)
                 ]);
 
-                if (!teachersResp.ok) throw new Error(`璁插笀鏁版嵁鍔犺浇澶辫触: ${teachersResp.status}`);
-                if (!coursesResp.ok) throw new Error(`璇剧▼鏁版嵁鍔犺浇澶辫触: ${coursesResp.status}`);
+                if (!teachersResp.ok) throw new Error(`讲师数据加载失败: ${teachersResp.status}`);
+                if (!coursesResp.ok) throw new Error(`课程数据加载失败: ${coursesResp.status}`);
 
                 const teachers = await teachersResp.json();
                 const courses = await coursesResp.json();
 
 
-                if (teachers.length === 0) console.warn('璀﹀憡锛氱郴缁熶腑鏆傛棤璁插笀鏁版嵁');
-                if (courses.length === 0) console.warn('璀﹀憡锛氱郴缁熶腑鏆傛棤璇剧▼鏁版嵁');
+                if (teachers.length === 0) console.warn('警告：系统中暂无讲师数据');
+                if (courses.length === 0) console.warn('警告：系统中暂无课程数据');
 
                 document.getElementById('new-combo-teacher').innerHTML = '<option value="">-- 选择讲师 --</option>' +
                     teachers.map(t => `<option value="${t.id}">${t.name} (${t.expertise || '暂无'})</option>`).join('');
 
-                // 杩囨护璇剧▼锛氬彧鏄剧ず灞炰簬褰撳墠璇鹃鐨勮绋嬶紝鎴栬€呮湭鍒嗙被鐨勮绋?
+                // 过滤课程：只显示属于当前课题的课程，或未分类的课程
                 const currentTopicId = parseInt(topicId);
                 const filteredCourses = courses.filter(c => !c.topic_id || c.topic_id === currentTopicId);
 
                 if (filteredCourses.length === 0) {
-                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 璇ヨ棰樻殏鏃犱笓灞炶绋?--</option>';
+                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 该课题暂无专属课程--</option>';
                 } else {
-                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 閫夋嫨璇剧▼ --</option>' +
+                    document.getElementById('new-combo-course').innerHTML = '<option value="">-- 选择课程 --</option>' +
                         filteredCourses.map(c => `
                             <option value="${c.id}" ${c.topic_id === currentTopicId ? 'class="font-bold bg-blue-50"' : ''}>
-                                ${c.topic_id === currentTopicId ? '鈽?' : ''}${c.name}
+                                ${c.topic_id === currentTopicId ? '【专属】' : ''}${c.name}
                             </option>
                         `).join('');
                 }
 
                 document.getElementById('add-combo-modal').classList.add('active');
             } catch (e) {
-                console.error('鍔犺浇鏁?璇剧粍鍚堟暟鎹け璐?', e);
-                alert('鏁版嵁鍔犺浇澶辫触: ' + e.message);
+                console.error('加载课程组合数据失败:', e);
+                alert('数据加载失败: ' + e.message);
             }
         }
 
@@ -978,13 +976,13 @@
 
                 if (resp.ok) {
                     closeAddComboModal();
-                    // 閲嶆柊鍔犺浇鍩硅鐝鎯呬互鍒锋柊鍒楄〃
+                    // 重新加载培训班详情以刷新列表
                     openTrainingDetail(currentTrainingTypeId);
                 } else {
-                    alert('淇濆瓨澶辫触');
+                    alert('保存失败');
                 }
             } catch (e) {
-                alert('淇濆瓨閿欒: ' + e.message);
+                alert('保存失败: ' + e.message);
             }
         }
 
@@ -998,18 +996,18 @@
             }
         }
 
-        // ==================== 鐝骇璇捐〃 ====================
+        // ==================== 班级课表 ====================
         async function openClassScheduleModal(classId) {
             currentClassId = classId;
             try {
                 const resp = await fetch(`${API_BASE}/classes/${classId}`);
                 const data = await resp.json();
-                document.getElementById('class-schedule-title').textContent = `${data.name} 璇捐〃`;
+                document.getElementById('class-schedule-title').textContent = `${data.name} 课表`;
                 renderClassSchedule(data.schedules || []);
                 document.getElementById('class-schedule-modal').classList.add('active');
                 lucide.createIcons();
             } catch (e) {
-                alert('鍔犺浇璇捐〃澶辫触');
+                alert('加载课表失败');
             }
         }
 
@@ -1020,11 +1018,11 @@
         function renderClassSchedule(schedules) {
             const container = document.getElementById('class-schedule-content');
             if (!schedules || schedules.length === 0) {
-                container.innerHTML = '<div class="text-slate-400 text-center p-8">鏆傛棤璇剧▼瀹夋帓</div>';
+                container.innerHTML = '<div class="text-slate-400 text-center p-8">暂无课程安排</div>';
                 return;
             }
 
-            // 鎸夊懆鍒嗙粍
+            // 按周分组
             const weeks = {};
             schedules.forEach((s, idx) => {
                 const d = new Date(s.scheduled_date);
@@ -1044,7 +1042,7 @@
 
                 return `
                     <div class="bg-slate-50 border rounded-xl p-4 mb-4">
-                        <h4 class="font-bold text-sm text-slate-700 mb-3">绗?${i + 1} 鍛?路 ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}</h4>
+                        <h4 class="font-bold text-sm text-slate-700 mb-3">第 ${i + 1} 周 路 ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}</h4>
                         <div class="space-y-2 drop-zone" data-week="${weekKey}">
                             ${weeks[weekKey].map(s => {
                     const isPlanning = s.status === 'planning';
@@ -1057,7 +1055,7 @@
                     return `
                                 <div class="draggable p-3 bg-white border ${borderClass} rounded-lg hover:shadow-md transition-all relative group"
                                      draggable="${!isPast}" data-schedule-id="${s.id}" data-week="${weekKey}">
-                                    ${isPlanning ? '<div class="absolute top-2 right-2 text-[10px] text-slate-400 bg-slate-100 px-1 rounded border border-slate-200">棰勬帓</div>' : ''}
+                                    ${isPlanning ? '<div class="absolute top-2 right-2 text-[10px] text-slate-400 bg-slate-100 px-1 rounded border border-slate-200">预排</div>' : ''}
                                     <div class="flex items-start justify-between">
                                         <div class="flex items-center gap-3">
                                             <div class="w-8 h-8 rounded-full ${bgClass} flex items-center justify-center font-bold text-sm">${s.topic_sequence || s.week_number}</div>
@@ -1067,14 +1065,14 @@
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            ${s.combo ? `<div class="text-xs ${isPlanning ? 'text-slate-500' : 'text-blue-600'} font-semibold">${s.combo.teacher_name}</div><div class="text-[10px] text-slate-500">${s.combo.course_name}</div>` : '<div class="text-[10px] text-orange-500">寰呭垎閰?/div>'}
+                                            ${s.combo ? `<div class="text-xs ${isPlanning ? 'text-slate-500' : 'text-blue-600'} font-semibold">${s.combo.teacher_name}</div><div class="text-[10px] text-slate-500">${s.combo.course_name}</div>` : '<div class="text-[10px] text-orange-500">待分配</div>'}
                                         </div>
                                     </div>
                                     <div class="mt-2 flex gap-2 pt-2 border-t border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity">
                                         ${!isPast ? `
-                                            <button onclick="openAdjustModal(${s.id})" class="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200">缂栬緫</button>
-                                            <button onclick="deleteScheduleItem(${s.id})" class="text-[10px] px-2 py-0.5 bg-red-100 text-red-600 rounded hover:bg-red-200">鍒犻櫎</button>
-                                        ` : '<span class="text-[10px] text-slate-400 italic">宸茬粨鏉熻绋嬩笉鍙紪杈?/span>'}
+                                            <button onclick="openAdjustModal(${s.id})" class="text-[10px] px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200">编辑</button>
+                                            <button onclick="deleteScheduleItem(${s.id})" class="text-[10px] px-2 py-0.5 bg-red-100 text-red-600 rounded hover:bg-red-200">删除</button>
+                                        ` : '<span class="text-[10px] text-slate-400 italic">已结束课程不可编辑</span>'}
                                     </div>
                                 </div>
                             `}).join('')}
@@ -1083,11 +1081,11 @@
                 `;
             }).join('');
 
-            // 鍒濆鍖栨嫋鎷戒簨浠?
+            // 初始化拖拽事件
             initDragAndDrop();
         }
 
-        // 鎷栨嫿鍔熻兘
+        // 拖拽功能
         function initDragAndDrop() {
             let draggedElement = null;
 
@@ -1127,7 +1125,7 @@
                     const targetWeek = zone.dataset.week;
 
                     if (sourceWeek !== targetWeek) {
-                        // 绉诲姩鍒扮洰鏍囧懆鐨勫懆鍏?
+                        // 移动到目标周的周末
                         const targetStart = new Date(targetWeek);
                         targetStart.setDate(targetStart.getDate() + (6 - targetStart.getDay()));
                         const newDate = targetStart.toISOString().slice(0, 10);
@@ -1142,7 +1140,7 @@
 
                             if (result.warning) {
                                 if (!confirm(result.warning + '\\n是否继续？')) return;
-                                // 寮哄埗鎵ц
+                                // 强制执行
                                 await fetch(`${API_BASE}/schedule/adjust`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
@@ -1153,11 +1151,11 @@
                                 return;
                             }
 
-                            // 鍒锋柊璇捐〃
+                            // 刷新课表
                             openClassScheduleModal(currentClassId);
                             loadMonthSchedule();
                         } catch (err) {
-                            alert('绉诲姩澶辫触: ' + err.message);
+                            alert('移动失败: ' + err.message);
                         }
                     }
                 });
@@ -1186,7 +1184,7 @@
                 if (!resp.ok) throw new Error('Failed to load');
                 cachedMonthData = await resp.json();
 
-                // 榛樿鏄剧ず绗竴鍛紝鎴栦繚鎸佸綋鍓峣ndex锛堝鏋滆繕鍦ㄨ寖鍥村唴锛?
+                // 默认显示第一周，或保持当前index（如果还在范围内）
                 if (currentWeekIndex >= (cachedMonthData.weeks || []).length) {
                     currentWeekIndex = 0;
                 }
@@ -1194,7 +1192,7 @@
                 renderSchedule();
                 updateMonthHeader();
             } catch (e) {
-                document.getElementById('schedule-container').innerHTML = '<div class="text-center text-slate-400 p-8">鍔犺浇澶辫触锛岃妫€鏌ュ悗绔湇鍔?/div>';
+                document.getElementById('schedule-container').innerHTML = '<div class="text-center text-slate-400 p-8">加载失败，请检查后端服务</div>';
             }
         }
 
@@ -1245,7 +1243,7 @@
             currentMonth += delta;
             if (currentMonth > 12) { currentMonth = 1; currentYear++; }
             if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-            currentWeekIndex = 0; // 鍒囨崲鏈堜唤鏃堕噸缃懆绱㈠紩
+            currentWeekIndex = 0; // 切换月份时重置周索引
             loadMonthSchedule();
         }
 
@@ -1379,25 +1377,30 @@
 
         function renderMonthView() {
             const container = document.getElementById('schedule-container');
+            // guard against missing data
+            if (!cachedMonthData) {
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
+                return;
+            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">鏈湀鏆傛棤鎺掕</div>';
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
                 return;
             }
 
             let html = `
                 <div class="flex items-center justify-between mb-6 px-2">
                     <div class="flex items-center gap-4">
-                        <span class="text-slate-400 text-sm font-medium">鍏ㄦ湀鎬昏锛堜粎鍛ㄥ叚鏃ワ級</span>
+                        <span class="text-slate-400 text-sm font-medium">全月总览（仅周六日）</span>
                         <div class="flex gap-3 text-xs opacity-80">
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-50 border border-slate-300 border-dashed"></span>棰勬帓</span>
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-50 border border-blue-200"></span>宸叉帓</span>
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-50 border border-green-200"></span>宸茬‘璁?/span>
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-50 border border-slate-300 border-dashed"></span>预排</span>
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-50 border border-blue-200"></span>已排</span>
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-50 border border-green-200"></span>已确认</span>
                         </div>
                     </div>
                     <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
-                        <i data-lucide="plus" class="w-4 h-4"></i> 鏂板鎺掕
+                        <i data-lucide="plus" class="w-4 h-4"></i> 新增排课
                     </button>
                 </div>
                 <div class="space-y-6 pb-8">
@@ -1415,22 +1418,22 @@
                 html += `
                     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
                         <div class="px-4 py-3 bg-slate-50 border-b flex items-center gap-3">
-                            <span class="bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-600 font-bold">绗?${idx + 1} 鍛?/span>
+                            <span class="bg-slate-100 px-2 py-0.5 rounded text-xs text-slate-600 font-bold">第${idx + 1} 周</span>
                             <span class="text-sm text-slate-500">${dateRangeStr}</span>
                         </div>
                 `;
 
                 if (!w.schedules || w.schedules.length === 0) {
-                    html += `<div class="p-5 text-xs text-slate-400 italic">鏈懆鏃犺</div>`;
+                    html += `<div class="p-5 text-xs text-slate-400 italic">本周无课</div>`;
                 } else {
                     html += `
                         <div class="overflow-x-auto">
                             <table class="w-full min-w-[760px] text-sm">
                                 <thead class="bg-slate-50 text-slate-600">
                                     <tr>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">鐝骇/璇鹃</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">鍛ㄥ叚 ${sat.getMonth() + 1}/${sat.getDate()}</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">鍛ㄦ棩 ${sun.getMonth() + 1}/${sun.getDate()}</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">班级/课题</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周六 ${sat.getMonth() + 1}/${sat.getDate()}</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周日 ${sun.getMonth() + 1}/${sun.getDate()}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1444,8 +1447,8 @@
                         const isPlanning = sch.status === 'planning';
                         const isPast = new Date(sch.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
                         const rowClass = isSelected ? 'bg-indigo-50' : (isConflict ? 'bg-red-50' : 'bg-white');
-                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '寰呭畾';
-                        const day1Course = sch.combo ? sch.combo.course_name : '寰呭畾';
+                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
+                        const day1Course = sch.combo ? sch.combo.course_name : '待定';
                         const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
                         const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
                         const statusText = isCompleted ? '已完成' : (isPlanning ? `预排 ${progress}` : `进度 ${progress}`);
@@ -1454,16 +1457,20 @@
                         html += `
                             <tr class="${rowClass} ${isMergeMode ? 'cursor-pointer' : ''}" ${isMergeMode ? `onclick="toggleMergeSelect(${sch.id})"` : ''}>
                                 <td class="px-3 py-3 border-b border-slate-100 align-top">
-                                    <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
-                                    <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '寰呭畾璇鹃'}</div>
-                                    <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
-                                    <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
-                                    ${conflictAssistHtml}
-                                    ${!isPast ? `
-                                    <div class="mt-2 flex gap-2">
-                                        <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded">缂栬緫</button>
-                                        <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">鍒犻櫎</button>
-                                    </div>` : ''}
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
+                                            <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
+                                            <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
+                                            <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
+                                            ${conflictAssistHtml}
+                                        </div>
+                                        ${!isPast ? `
+                                        <div class="flex gap-2 ml-4">
+                                            <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded whitespace-nowrap">编辑</button>
+                                            <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded whitespace-nowrap">删除</button>
+                                        </div>` : ''}
+                                    </div>
                                 </td>
                                 <td class="px-3 py-3 border-b border-slate-100 align-top">
                                     <div class="font-semibold text-slate-700">${day1Teacher}</div>
@@ -1490,10 +1497,10 @@
             html += `
                 </div>
                 <div class="mt-8 flex justify-end items-center gap-4 px-2 pt-4 border-t border-slate-100">
-                    <div class="text-xs text-slate-400">鎸夋湀瑙勫垝鍏ㄥ鏈熸帓璇捐繘搴?/div>
+                    <div class="text-xs text-slate-400">按月规划全学期排课进度</div>
                     <div class="flex gap-3">
-                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">淇濆瓨鑽夌</button>
-                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">鍙戝竷鏈堝害璁″垝</button>
+                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">保存草稿</button>
+                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
                     </div>
                 </div>
             `;
@@ -1504,10 +1511,14 @@
 
         function renderWeekView() {
             const container = document.getElementById('schedule-container');
+            if (!cachedMonthData) {
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
+                return;
+            }
             const weeks = cachedMonthData.weeks || [];
 
             if (weeks.length === 0) {
-                container.innerHTML = '<div class="text-center text-slate-400 p-8">鏈湀鏆傛棤鎺掕</div>';
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
                 return;
             }
 
@@ -1530,7 +1541,7 @@
                                 <i data-lucide="chevron-left" class="w-5 h-5"></i>
                             </button>
                             <span class="px-4 py-1 text-sm font-bold text-slate-700 border-x border-slate-100 flex items-center">
-                                绗?${currentWeekIndex + 1} 鍛?
+                                第 ${currentWeekIndex + 1} 周
                             </span>
                             <button onclick="changeWeek(1)" class="p-1 px-3 hover:bg-slate-50 rounded text-slate-600 ${currentWeekIndex === weeks.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}" ${currentWeekIndex === weeks.length - 1 ? 'disabled' : ''}>
                                 <i data-lucide="chevron-right" class="w-5 h-5"></i>
@@ -1539,7 +1550,7 @@
                         <span class="text-slate-400 text-sm font-medium">${dateRangeStr}</span>
                     </div>
                     <button onclick="openAddClassModal()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-all">
-                        <i data-lucide="plus" class="w-4 h-4"></i> 鏂板鎺掕
+                        <i data-lucide="plus" class="w-4 h-4"></i> 新增排课
                     </button>
                 </div>
             `;
@@ -1547,8 +1558,8 @@
             if (!w.schedules || w.schedules.length === 0) {
                 html += `
                     <div class="min-h-[300px] flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl m-4 bg-slate-50/50">
-                        <div class="text-slate-400 text-sm mb-4">鏈懆鏆傛棤璇剧▼瀹夋帓</div>
-                        <button onclick="openAddClassModal()" class="text-blue-600 font-bold text-sm hover:underline">绔嬪嵆鎺掕</button>
+                        <div class="text-slate-400 text-sm mb-4">本周暂无课程安排</div>
+                        <button onclick="openAddClassModal()" class="text-blue-600 font-bold text-sm hover:underline">立即排课</button>
                     </div>
                 `;
             } else {
@@ -1558,9 +1569,9 @@
                             <table class="w-full min-w-[760px] text-sm">
                                 <thead class="bg-slate-50 text-slate-600">
                                     <tr>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">鐝骇/璇鹃</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">鍛ㄥ叚 ${sat.getMonth() + 1}/${sat.getDate()}</th>
-                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">鍛ㄦ棩 ${sun.getMonth() + 1}/${sun.getDate()}</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[30%]">班级/课题</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周六 ${sat.getMonth() + 1}/${sat.getDate()}</th>
+                                        <th class="text-left px-3 py-2 border-b border-slate-200 w-[35%]">周日 ${sun.getMonth() + 1}/${sun.getDate()}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1574,8 +1585,8 @@
                     const isPlanning = sch.status === 'planning';
                     const isPast = new Date(sch.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
                     const rowClass = isSelected ? 'bg-indigo-50' : (isConflict ? 'bg-red-50' : 'bg-white');
-                    const day1Teacher = sch.combo ? sch.combo.teacher_name : '寰呭畾';
-                    const day1Course = sch.combo ? sch.combo.course_name : '寰呭畾';
+                    const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
+                    const day1Course = sch.combo ? sch.combo.course_name : '待定';
                     const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
                     const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
                     const statusText = isCompleted ? '已完成' : (isPlanning ? `预排 ${progress}` : `进度 ${progress}`);
@@ -1585,16 +1596,16 @@
                         <tr class="${rowClass} ${isMergeMode ? 'cursor-pointer' : ''}" ${isMergeMode ? `onclick="toggleMergeSelect(${sch.id})"` : ''}>
                             <td class="px-3 py-3 border-b border-slate-100 align-top">
                                 <div class="font-bold text-slate-800">${sch.class_name || '未命名班级'}</div>
-                                <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '寰呭畾璇鹃'}</div>
+                                <div class="text-xs text-slate-500 mt-1">${sch.topic_name || '待定课题'}</div>
                                 <div class="text-[11px] text-slate-400 mt-1">班主任: ${sch.homeroom_name || '未分配'}</div>
                                 <div class="text-[11px] mt-2 ${isCompleted ? 'text-green-600' : 'text-blue-600'}">${statusText}</div>
                                     ${conflictAssistHtml}
                                 <div class="mt-2 flex gap-2">
                                     ${!isPast ? `
-                                    <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded">缂栬緫</button>
-                                    <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">鍒犻櫎</button>` : ''}
+                                    <button onclick="openAdjustModal(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded">编辑</button>
+                                    <button onclick="deleteScheduleItem(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">删除</button>` : ''}
                                     ${sch.merged_with
-                            ? `<button onclick="unmergeSchedule(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded">鎷嗗垎</button>`
+                            ? `<button onclick="unmergeSchedule(${sch.id}); event.stopPropagation();" class="text-[11px] px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded">拆分</button>`
                             : ''}
                                 </div>
                             </td>
@@ -1620,10 +1631,10 @@
 
             html += `
                 <div class="mt-8 flex justify-end items-center gap-4 px-2 pt-4 border-t border-slate-100">
-                    <div class="text-xs text-slate-400">鎸夋湀瑙勫垝鍏ㄥ鏈熸帓璇捐繘搴?/div>
+                    <div class="text-xs text-slate-400">按月规划全学期排课进</div>
                     <div class="flex gap-3">
-                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">淇濆瓨鑽夌</button>
-                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">鍙戝竷鏈堝害璁″垝</button>
+                        <button onclick="saveDraft()" class="text-slate-600 text-sm font-bold px-4 py-2 hover:bg-slate-50 rounded-lg">保存草稿</button>
+                        <button onclick="openPublishPreview()" class="bg-green-600 text-white text-sm font-bold px-6 py-2 rounded-lg hover:bg-green-700 shadow-md transition-transform active:scale-95">发布月度计划</button>
                     </div>
                 </div>
             `;
@@ -1646,35 +1657,35 @@
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <div class="text-sm font-bold text-red-700">${item.class_name || '-'} 路 ${item.topic_name || '-'}</div>
-                            <div class="text-xs text-slate-500 mt-1">鏃ユ湡: ${item.date || '-'} | 褰卞搷鑼冨洿: ${item.impact_scope || '-'}</div>
+                            <div class="text-xs text-slate-500 mt-1">日期: ${item.date || '-'} | 影响范围: ${item.impact_scope || '-'}</div>
                         </div>
-                        <button type="button" onclick="document.getElementById('conflict-reason-${idx}').classList.toggle('hidden')" class="text-xs px-2 py-1 bg-white border rounded text-slate-600">鏌ョ湅鍘熷洜</button>
+                        <button type="button" onclick="document.getElementById('conflict-reason-${idx}').classList.toggle('hidden')" class="text-xs px-2 py-1 bg-white border rounded text-slate-600">查看原因</button>
                     </div>
                     <div id="conflict-reason-${idx}" class="hidden mt-2 text-xs text-slate-700 bg-white border rounded p-2">
-                        <div><span class="font-semibold">鍘熷洜:</span> ${item.reason || '-'}</div>
-                        <div class="mt-1"><span class="font-semibold">鑷姩寤鸿:</span> ${item.suggestion || '-'}</div>
+                        <div><span class="font-semibold">原因:</span> ${item.reason || '-'}</div>
+                        <div class="mt-1"><span class="font-semibold">自动建议:</span> ${item.suggestion || '-'}</div>
                     </div>
                 </div>
-            `).join('') : '<div class="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">鏃犳棤娉曡В鍐冲啿绐?/div>';
+            `).join('') : '<div class="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">无无法解决冲突</div>';
 
             const pendingHtml = pending.length ? pending.map(item => `
-                <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">${item.class_name || '-'} 路 ${item.topic_name || '-'} 路 ${item.date || '-'}锛堝緟纭锛?/div>
-            `).join('') : '<div class="text-xs text-slate-400">鏃犲緟纭椤?/div>';
+                <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">${item.class_name || '-'} 路 ${item.topic_name || '-'} · ${item.date || '-'}（待确认）</div>
+            `).join('') : '<div class="text-xs text-slate-400">鏃犲緟纭椤</div>';
 
-            const resolvedHtml = resolved.length ? `<div class="text-xs text-slate-600">宸茶В鍐?${resolved.length} 椤?/div>` : '<div class="text-xs text-slate-400">鏃犲凡瑙ｅ喅椤?/div>';
+            const resolvedHtml = resolved.length ? `<div class="text-xs text-slate-600">已解决 ${resolved.length} 项</div>` : '<div class="text-xs text-slate-400">无已解决项</div>';
 
             return `
                 <div class="mt-4 space-y-3">
                     <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-red-700 mb-2">鏃犳硶瑙ｅ喅锛堥粯璁ら樆姝㈠彂甯冿級</div>
+                        <div class="font-bold text-sm text-red-700 mb-2">无法解决（默认阻止发布）</div>
                         <div class="space-y-2">${unresolvedHtml}</div>
                     </div>
                     <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-amber-700 mb-2">寰呯‘璁?/div>
+                        <div class="font-bold text-sm text-amber-700 mb-2">待确认</div>
                         <div class="space-y-2">${pendingHtml}</div>
                     </div>
                     <div class="bg-white border rounded-xl p-3">
-                        <div class="font-bold text-sm text-slate-700 mb-2">宸茶В鍐?/div>
+                        <div class="font-bold text-sm text-slate-700 mb-2">已解决</div>
                         ${resolvedHtml}
                     </div>
                 </div>
@@ -1713,7 +1724,7 @@
 
         async function openPublishPreview() {
             if (!cachedMonthData || !(cachedMonthData.weeks || []).length) {
-                alert('褰撳墠娌℃湁鍙彂甯冪殑鎺掕鏁版嵁');
+                alert('当前没有可发布的排课数据');
                 return;
             }
 
@@ -1737,7 +1748,7 @@
 
             const weeks = cachedMonthData.weeks || [];
             let html = `
-                <div class="mb-4 text-sm text-slate-600">${cachedMonthData.year}骞?{cachedMonthData.month}鏈堝彂甯冮瑙堬紙鍛ㄥ叚/鍛ㄦ棩锛?/div>
+                <div class="mb-4 text-sm text-slate-600">${cachedMonthData.year}年${cachedMonthData.month}月发布预览（周六/周日）</div>
                 <div class="space-y-4">
             `;
 
@@ -1749,27 +1760,27 @@
                 sun.setDate(sun.getDate() + 1);
 
                 const satItems = (w.schedules || []).map(sch => {
-                    const teacher = sch.combo ? sch.combo.teacher_name : '寰呭畾';
-                    const course = sch.combo ? sch.combo.course_name : '寰呭畾';
+                    const teacher = sch.combo ? sch.combo.teacher_name : '待定';
+                    const course = sch.combo ? sch.combo.course_name : '待定';
                     return `<div class="text-xs text-slate-700 mb-1"><span class="font-semibold">${sch.class_name}</span> 路 ${teacher} 路 ${course}</div>`;
-                }).join('') || '<div class="text-xs text-slate-400">鏃?/div>';
+                }).join('') || '<div class="text-xs text-slate-400">无</div>';
 
                 const sunItems = (w.schedules || []).map(sch => {
-                    const teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo ? sch.combo.teacher_name : '寰呭畾');
-                    const course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo ? sch.combo.course_name : '寰呭畾');
+                    const teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo ? sch.combo.teacher_name : '待定');
+                    const course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo ? sch.combo.course_name : '待定');
                     return `<div class="text-xs text-slate-700 mb-1"><span class="font-semibold">${sch.class_name}</span> 路 ${teacher} 路 ${course}</div>`;
-                }).join('') || '<div class="text-xs text-slate-400">鏃?/div>';
+                }).join('') || '<div class="text-xs text-slate-400">鏃</div>';
 
                 html += `
                     <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                        <div class="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-600">绗?${idx + 1} 鍛?/div>
+                        <div class="px-3 py-2 bg-slate-50 border-b text-xs font-bold text-slate-600">第${idx + 1} 周</div>
                         <div class="grid grid-cols-2">
                             <div class="p-3 border-r border-slate-100">
-                                <div class="text-xs font-bold text-blue-600 mb-2">鍛ㄥ叚 ${sat.getMonth() + 1}/${sat.getDate()}</div>
+                                <div class="text-xs font-bold text-blue-600 mb-2">周六 ${sat.getMonth() + 1}/${sat.getDate()}</div>
                                 ${satItems}
                             </div>
                             <div class="p-3">
-                                <div class="text-xs font-bold text-orange-600 mb-2">鍛ㄦ棩 ${sun.getMonth() + 1}/${sun.getDate()}</div>
+                                <div class="text-xs font-bold text-orange-600 mb-2">周日 ${sun.getMonth() + 1}/${sun.getDate()}</div>
                                 ${sunItems}
                             </div>
                         </div>
@@ -1832,9 +1843,9 @@
                     return;
                 }
 
-                alert(data.error || '鍙戝竷澶辫触');
+                alert(data.error || '发布失败');
             } catch (e) {
-                alert('鍙戝竷澶辫触');
+                alert('发布失败');
             }
         }
 
@@ -1846,10 +1857,10 @@
             const confirmBtn = document.getElementById('confirm-merge-btn');
 
             if (isMergeMode) {
-                btn.innerHTML = `<i data-lucide="x" class="w-3 h-3"></i> 鍙栨秷`;
+                btn.innerHTML = `<i data-lucide="x" class="w-3 h-3"></i> 取消`;
                 btn.className = "px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all flex items-center gap-1";
             } else {
-                btn.innerHTML = `<i data-lucide="layers" class="w-3 h-3"></i> 鍚堢彮妯″紡`;
+                btn.innerHTML = `<i data-lucide="layers" class="w-3 h-3"></i> 合班模式`;
                 btn.className = "px-3 py-1.5 text-xs font-bold bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200 transition-all flex items-center gap-1";
                 confirmBtn.classList.add('hidden');
             }
@@ -1876,7 +1887,7 @@
             }
             countSpan.textContent = selectedMergeIds.size;
 
-            // 灞€閮ㄩ噸鏂版覆鏌撹繃浜庡鏉傦紝鐩存帴閲嶆柊鍔犺浇
+            // 局部重新渲染过于复杂，直接重新加载
             loadMonthSchedule();
         }
 
@@ -1894,14 +1905,14 @@
                 });
 
                 if (resp.ok) {
-                    alert('鍚堢彮鎴愬姛');
-                    toggleMergeMode(); // 閫€鍑哄悎骞舵ā寮?
+                    alert('合班成功');
+                    toggleMergeMode(); // 退出合并模式
                 } else {
                     const err = await resp.json();
-                    alert('鍚堢彮澶辫触: ' + (err.error || '鏈煡閿欒'));
+                    alert('合班失败: ' + (err.error || '未知错误'));
                 }
             } catch (e) {
-                alert('鍚堢彮澶辫触');
+                alert('合班失败');
             }
         }
 
@@ -1917,32 +1928,32 @@
 
 
 
-        // ==================== 璋冩暣璇剧▼ ====================
+        // ==================== 调整课程 ====================
         async function openAdjustModal(scheduleId) {
             currentScheduleId = scheduleId;
             try {
-                // 1. 鑾峰彇璇剧▼璇︽儏
+                // 1. 获取课程详情
                 const schedResp = await fetch(`${API_BASE}/schedule/${scheduleId}`);
-                if (!schedResp.ok) throw new Error('鑾峰彇璇剧▼璇︽儏澶辫触');
+                if (!schedResp.ok) throw new Error('获取课程详情失败');
                 const schedule = await schedResp.json();
 
                 document.getElementById('adjust-schedule-info').innerHTML = `
                     <div class="font-bold text-slate-800">${schedule.class_name}</div>
                     <div class="text-sm font-semibold text-blue-600">${schedule.topic_name}</div>
-                    <div class="text-xs text-slate-500 mt-1">褰撳墠鎺掕: ${schedule.scheduled_date}</div>
+                    <div class="text-xs text-slate-500 mt-1">当前排课: ${schedule.scheduled_date}</div>
                 `;
                 document.getElementById('adjust-new-date').value = schedule.scheduled_date;
 
-                // 2. 鍔犺浇璇ヨ棰樹笅鐨勫彲閫夋暀-璇剧粍鍚?
+                // 2. 加载该课题下的可选教-课组合
                 const combosResp = await fetch(`${API_BASE}/combos?topic_id=${schedule.topic_id}`);
                 const combos = await combosResp.json();
 
-                // 3. 濉厖涓嬫媺妗?
+                // 3. 填充下拉框
                 const comboSelect = document.getElementById('adjust-combo');
                 if (combos.length === 0) {
-                    comboSelect.innerHTML = '<option value="">-- 璇ヨ棰樻殏鏃犳暀-璇剧粍鍚?璇烽噸鏂伴厤缃? --</option>';
+                    comboSelect.innerHTML = '<option value="">-- 该课题暂无教-课组合，请重新配置 --</option>';
                 } else {
-                    comboSelect.innerHTML = '<option value="">-- 淇濇寔涓嶅彉 --</option>' +
+                    comboSelect.innerHTML = '<option value="">-- 保持不变 --</option>' +
                         combos.map(c => `
                             <option value="${c.id}" ${schedule.combo_id === c.id ? 'selected' : ''}>
                                 ${c.teacher_name} - ${c.course_name}
@@ -1954,7 +1965,7 @@
                 lucide.createIcons();
             } catch (e) {
                 console.error(e);
-                alert('鍔犺浇璇︽儏澶辫触: ' + e.message);
+                alert('加载详情失败: ' + e.message);
             }
         }
 
@@ -1962,18 +1973,23 @@
             document.getElementById('adjust-schedule-modal').classList.remove('active');
         }
 
+        // 移动课程至指定周（前一周或后一周）
         async function moveScheduleWeek(direction) {
             try {
+                // 发送请求至后端，指定要移动的课程ID和方向（prev/next）
                 await fetch(`${API_BASE}/schedule/move-week`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ schedule_id: currentScheduleId, direction })
                 });
+                // 关闭调整模态框
                 closeAdjustModal();
+                // 刷新月度排课视图
                 loadMonthSchedule();
+                // 如果当前班级已打开，刷新班级课表
                 if (currentClassId) openClassScheduleModal(currentClassId);
             } catch (e) {
-                alert('璋冩暣澶辫触');
+                alert('调整失败');
             }
         }
 
@@ -1994,11 +2010,11 @@
                 closeAdjustModal();
                 loadMonthSchedule();
             } catch (e) {
-                alert('淇濆瓨澶辫触');
+                alert('保存失败');
             }
         }
 
-        // ==================== AI 鏅鸿兘鎺掕 ====================
+        // ==================== AI 智能排课 ====================
         async function smartGenerateSchedule(event) {
             if (event) event.preventDefault();
 
@@ -2007,20 +2023,20 @@
 
             const prompt = document.getElementById('prompt-input').value.trim();
 
-            // 鍏佽涓虹┖锛屼綔涓衡€滄棤鐗规畩瑕佹眰鈥濆鐞?
+            // 允许为空，作为无特殊要求”处?
             // if (!prompt) {
-            //     alert('璇疯緭鍏ユ彁绀鸿瘝锛屾垨鑰呮弿杩?鏃犵壒娈婅姹?');
+            //     alert('请输入提示词，或者描述无特殊要求');
             //     return;
             // }
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 姝ｅ湪鎬濊€冨苟鎺掕...' : '姝ｅ湪蹇€熺敓鎴愯琛?..');
+            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 正在思考并排课...' : '正在快速生成课表...');
 
             const resultBox = document.getElementById('constraints-result');
             resultBox.classList.add('hidden');
 
             try {
-                // 0. 鍑嗗涓婁笅鏂囨暟鎹?
+                // 0. 准备上下文数据
                 const [teachersResp, homeroomsResp, classesResp] = await Promise.all([
                     fetch(`${API_BASE}/teachers`),
                     fetch(`${API_BASE}/homerooms`),
@@ -2038,7 +2054,7 @@
                     classes: classesData.map(c => c.name)
                 };
 
-                // 1. 鎻愬彇绾︽潫
+                // 1. 提取约束
                 const resp = await fetch(`${API_BASE}/ai/extract-constraints`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2047,22 +2063,22 @@
 
                 if (!resp.ok) {
                     const err = await resp.json();
-                    throw new Error(err.error || 'AI鏈嶅姟璇锋眰澶辫触');
+                    throw new Error(err.error || 'AI服务请求失败');
                 }
 
                 const data = await resp.json();
 
-                // 2. 鏄剧ず鎻愬彇缁撴灉
+                // 2. 显示提取结果
                 let html = '';
                 if (data.constraints) {
                     if (data.constraints.blocked_dates?.length) {
-                        html += '<div class="mb-1">馃搮 <strong>閬垮紑鏃ユ湡锛?/strong>' + data.constraints.blocked_dates.map(d => `${d.date}(${d.reason})`).join(', ') + '</div>';
+                        html += '<div class="mb-1">馃搮 <strong>避开日期：</strong>' + data.constraints.blocked_dates.map(d => `${d.date}(${d.reason})`).join(', ') + '</div>';
                     }
                     if (data.constraints.teacher_unavailable?.length) {
-                        html += '<div class="mb-1">馃毇 <strong>璁插笀璇峰亣锛?/strong>' + data.constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${t.dates.join(',')}`).join('; ') + '</div>';
+                        html += '<div class="mb-1">馃毇 <strong>讲师请假：</strong>' + data.constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${t.dates.join(',')}`).join('; ') + '</div>';
                     }
                     if (data.constraints.homeroom_unavailable?.length) {
-                        html += '<div class="mb-1">馃毇 <strong>鐝富浠昏鍋囷細</strong>' + data.constraints.homeroom_unavailable.map(h => `${h.homeroom_name}: ${h.dates.join(',')}`).join('; ') + '</div>';
+                        html += '<div class="mb-1">馃毇 <strong>班主任请假：</strong>' + data.constraints.homeroom_unavailable.map(h => `${h.homeroom_name}: ${h.dates.join(',')}`).join('; ') + '</div>';
                     }
                 }
                 document.getElementById('constraints-content').innerHTML = html || '未识别到具体约束，将按默认规则排课。';
@@ -2070,7 +2086,7 @@
 
                 const conflictMode = document.getElementById('conflict-mode').value;
 
-                // 3. 璋冪敤鍚庣鐢熸垚鎺ュ彛锛屽簲鐢ㄧ害鏉?
+                // 3. 调用后端生成接口，应用约束
                 const genResp = await fetch(`${API_BASE}/schedule/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2082,13 +2098,13 @@
                     })
                 });
 
-                if (!genResp.ok) throw new Error('鎺掕鐢熸垚澶辫触');
+                if (!genResp.ok) throw new Error('排课生成失败');
                 const genResult = await genResp.json();
 
-                // 4. 鍒锋柊璇捐〃
+                // 4. 刷新课表
                 await loadMonthSchedule();
 
-                // 5. 鏄剧ず鎺掕缁撴灉鍙嶉 (鐗瑰埆鏄湭鎺掕鐨勭彮绾?
+                // 5. 显示排课结果反馈 (特别是未排课的班级)
                 let msg = `排课完成：${genResult.message}`;
                 const constraintsBox = document.getElementById('constraints-content');
 
@@ -2096,7 +2112,7 @@
                     let warnHtml = `<div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
                         <div class="font-bold flex items-center gap-2 mb-2 text-sm">
                             <i data-lucide="clock" class="w-4 h-4 text-red-600"></i>
-                            浠ヤ笅鐝骇鏈湀鏃犲悎閫傛。鏈燂紝宸茶嚜鍔ㄩ『寤惰嚦涓嬫湀 (璇剧▼杩涘害淇濈暀):
+                            以下班级本月无合适档期，已自动顺延至下月 (课程进度保留):
                         </div>
                         <ul class="list-disc list-inside space-y-1">`;
 
@@ -2114,15 +2130,15 @@
 
             } catch (e) {
                 console.error(e);
-                alert('鏅鸿兘鎺掕澶辫触: ' + e.message);
+                alert('智能排课失败: ' + e.message);
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i data-lucide="sparkles" class="w-4 h-4"></i> 鏅鸿兘閲嶆柊鐢熸垚璇捐〃';
+                btn.innerHTML = '<i data-lucide="sparkles" class="w-4 h-4"></i> 智能重新生成课表';
                 lucide.createIcons();
             }
         }
 
-        // ==================== 鍩虹鏁版嵁绠＄悊 ====================
+        // ==================== 资源配置 ====================
         async function loadHomerooms() {
             try {
                 const resp = await fetch(`${API_BASE}/homerooms`);
@@ -2133,7 +2149,7 @@
                             <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-bold">${h.name[0]}</div>
                             <span class="text-sm">${h.name}</span>
                         </div>
-                        <button onclick="deleteHomeroom(${h.id})" class="text-red-500 text-xs">鍒犻櫎</button>
+                        <button onclick="deleteHomeroom(${h.id})" class="text-red-500 text-xs">删除</button>
                     </div>
                 `).join('');
             } catch (e) { }
@@ -2163,7 +2179,7 @@
                             <span class="text-sm font-medium">${t.name}</span>
                             <span class="text-[10px] text-slate-500 ml-2">${t.title || ''}</span>
                         </div>
-                        <button onclick="deleteTeacher(${t.id})" class="text-red-500 text-xs">鍒犻櫎</button>
+                        <button onclick="deleteTeacher(${t.id})" class="text-red-500 text-xs">删除</button>
                     </div>
                 `).join('');
             } catch (e) { }
@@ -2185,7 +2201,7 @@
 
         async function loadCourses() {
             try {
-                // 骞惰鍔犺浇璇剧▼鍜屽煿璁彮绫诲瀷(鍚棰?
+                // 并行加载课程和培训班类型(含课题)
                 const [coursesResp, typesResp] = await Promise.all([
                     fetch(`${API_BASE}/courses`),
                     fetch(`${API_BASE}/training-types`)
@@ -2194,15 +2210,15 @@
                 const courses = await coursesResp.json();
                 const types = await typesResp.json();
 
-                // 1. 濉厖璇鹃涓嬫媺妗?
+                // 1. 填充课题下拉框
                 const topicSelect = document.getElementById('new-course-topic');
                 const filterSelect = document.getElementById('course-topic-filter');
 
-                // 淇濆瓨褰撳墠閫変腑鐨勭瓫閫夊€?
+                // 保存当前选中的筛选值
                 const currentFilterValue = filterSelect.value;
 
-                let optionsHtml = '<option value="">-- 閫夋嫨鎵€灞炶棰?--</option>';
-                let filterOptionsHtml = '<option value="">-- 鍏ㄩ儴璇鹃 --</option>';
+                let optionsHtml = '<option value="">-- 选择课题 --</option>';
+                let filterOptionsHtml = '<option value="">-- 全部课题 --</option>';
                 const topicMap = new Map(); // id -> {name, type_name}
 
                 types.forEach(type => {
@@ -2218,7 +2234,7 @@
                 topicSelect.innerHTML = optionsHtml;
                 filterSelect.innerHTML = filterOptionsHtml;
 
-                // 鎭㈠涔嬪墠鐨勭瓫閫夊€?
+                // 恢复之前的筛选值
                 if (currentFilterValue) {
                     filterSelect.value = currentFilterValue;
                 }
@@ -2226,21 +2242,21 @@
                 // Store globally for filtering
                 window._courseData = { courses, topicMap };
 
-                // 2. 鎸夎棰樺垎缁勫睍绀鸿绋?
+                // 2. 按课题分组展示课程
                 const coursesByTopic = {};
                 const unassignedCourses = [];
 
-                // 璇诲彇绛涢€夊櫒鐨勫€?
+                // 读取筛选器的值
                 const filterTopicId = document.getElementById('course-topic-filter')?.value;
                 const filterTopicIdNum = filterTopicId ? parseInt(filterTopicId) : null;
 
-                // 鎸夊煿璁彮绫诲瀷鍐嶅垎缁?
+                // 按培训班类型再分组
                 const coursesByType = {};
 
                 courses.forEach(c => {
-                    // 濡傛灉鏈夌瓫閫夛紝鍙樉绀虹瓫閫夌殑璇鹃涓嬬殑璇剧▼
+                    // 如果有筛选，只显示筛选的课题下的课程
                     if (filterTopicIdNum && c.topic_id !== filterTopicIdNum) {
-                        return; // 璺宠繃
+                        return; // 跳过
                     }
 
                     if (c.topic_id && topicMap.has(c.topic_id)) {
@@ -2258,14 +2274,14 @@
                 const typeColors = ['bg-blue-600', 'bg-green-600', 'bg-purple-600', 'bg-orange-600', 'bg-pink-600', 'bg-teal-600', 'bg-indigo-600'];
                 let colorIdx = 0;
 
-                // 鎸夊煿璁彮绫诲瀷鍒嗙粍灞曠ず
+                // 按培训班类型分组展示
                 for (const [typeName, topics] of Object.entries(coursesByType)) {
                     const color = typeColors[colorIdx % typeColors.length];
                     colorIdx++;
 
                     html += `
                         <div class="mb-4 border rounded-xl overflow-hidden shadow-sm">
-                            <!-- 鍩硅鐝被鍨嬫爣棰?-->
+                            <!-- 培训班类型标题 -->
                             <div class="${color} text-white px-3 py-2 flex items-center justify-between cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="graduation-cap" class="w-4 h-4"></i>
@@ -2273,20 +2289,20 @@
                                 </div>
                                 <i data-lucide="chevron-down" class="w-4 h-4"></i>
                             </div>
-                            <!-- 璇鹃鍒楄〃 -->
+                            <!-- 课题列表 -->
                             <div class="bg-white divide-y divide-slate-100">
                     `;
 
                     for (const [topicId, topicData] of Object.entries(topics)) {
                         html += `
                                 <div class="p-2">
-                                    <!-- 璇鹃鏍囬 -->
+                                    <!-- 课题标题 -->
                                     <div class="flex items-center gap-2 px-2 py-1 bg-slate-50 rounded-lg mb-2">
                                         <i data-lucide="book-open" class="w-3 h-3 text-slate-400"></i>
                                         <span class="text-xs font-semibold text-slate-600">${topicData.topicName}</span>
-                                        <span class="text-[10px] bg-slate-200 text-slate-500 px-1.5 rounded">${topicData.courses.length}门?/span>
+                                        <span class="text-[10px] bg-slate-200 text-slate-500 px-1.5 rounded">${topicData.courses.length}门</span>
                                     </div>
-                                    <!-- 璇剧▼鍒楄〃 -->
+                                    <!-- 课程列表 -->
                                     <div class="space-y-1 pl-3">
                                         ${topicData.courses.map(c => `
                                             <div class="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all group">
@@ -2310,13 +2326,13 @@
                     `;
                 }
 
-                // 鏈垎閰嶈棰樼殑璇剧▼
+                // 未分配课题的课程
                 if (unassignedCourses.length > 0) {
                     html += `
                         <div class="mb-4 border border-dashed border-slate-300 rounded-xl overflow-hidden">
                             <div class="bg-slate-100 text-slate-500 px-3 py-2 flex items-center gap-2">
                                 <i data-lucide="alert-circle" class="w-4 h-4"></i>
-                                <span class="font-bold text-sm">鏈垎绫昏绋?/span>
+                                <span class="font-bold text-sm">未分类课程</span>
                                 <span class="text-[10px] bg-slate-200 px-1.5 rounded">${unassignedCourses.length}</span>
                             </div>
                             <div class="p-2 space-y-1">
@@ -2333,14 +2349,14 @@
                     `;
                 }
 
-                if (!html) html = '<div class="text-center text-slate-400 text-xs p-4">鏆傛棤璇剧▼鏁版嵁</div>';
+                if (!html) html = '<div class="text-center text-slate-400 text-xs p-4">暂无课程数据</div>';
 
                 document.getElementById('courses-list').innerHTML = html;
                 lucide.createIcons();
 
             } catch (e) {
                 console.error(e);
-                document.getElementById('courses-list').innerHTML = '<div class="text-red-500 text-xs p-2">鍔犺浇澶辫触</div>';
+                document.getElementById('courses-list').innerHTML = '<div class="text-red-500 text-xs p-2">加载失败</div>';
             }
         }
 
@@ -2367,7 +2383,7 @@
                     document.getElementById('new-course-name').value = '';
                     loadCourses();
                 } else {
-                    alert('娣诲姞澶辫触');
+                    alert('添加失败');
                 }
             } catch (e) {
                 alert('娣诲姞閿欒: ' + e.message);
@@ -2388,12 +2404,3 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
-
-
