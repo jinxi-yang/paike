@@ -1,5 +1,5 @@
 """
-班级API - 含自动排课功能
+班级API - 含三重降级自动排课功能
 """
 from flask import Blueprint, jsonify, request
 from datetime import date, timedelta
@@ -21,26 +21,26 @@ def precheck_plan():
     from config import Config
 
     data = request.get_json() or {}
-    training_type_id = data.get('training_type_id')
+    project_id = data.get('project_id')
     start_date_str = data.get('start_date')
     horizon_weeks = int(data.get('horizon_weeks', 16))
 
-    if not training_type_id or not start_date_str:
-        return jsonify({'error': 'Missing training_type_id/start_date'}), 400
+    if not project_id or not start_date_str:
+        return jsonify({'error': 'Missing project_id/start_date'}), 400
 
     try:
         start_date = date.fromisoformat(start_date_str)
     except ValueError:
         return jsonify({'error': 'Invalid start_date format, expected YYYY-MM-DD'}), 400
 
-    topics = Topic.query.filter_by(training_type_id=training_type_id).order_by(Topic.sequence).all()
+    topics = Topic.query.filter_by(project_id=project_id).order_by(Topic.sequence).all()
     if not topics:
         return jsonify({
-            'training_type_id': training_type_id,
+            'project_id': project_id,
             'topic_count': 0,
             'predicted_dates': [],
             'homeroom_recommendations': [],
-            'risk_hints': ['当前培训班类型下无课题，无法预检']
+            'risk_hints': ['当前项目下无课题，无法预检']
         })
 
     min_interval = getattr(Config, 'MIN_WEEKS_INTERVAL', 2)
@@ -114,7 +114,7 @@ def precheck_plan():
         risk_hints.append('所有班主任都有潜在冲突，请优先处理班主任排班资源')
 
     return jsonify({
-        'training_type_id': training_type_id,
+        'project_id': project_id,
         'topic_count': len(topics),
         'predicted_dates': [d.isoformat() for d in predicted_dates],
         'holiday_skips': holiday_skips,
@@ -122,15 +122,59 @@ def precheck_plan():
         'risk_hints': risk_hints
     })
 
+def sync_class_statuses():
+    """自动同步状态 - 班级 planning→active + 排课 scheduled→completed（按日期）"""
+    from datetime import date as dt_date
+    today = dt_date.today()
+    
+    # 1. 班级状态: planning → active（开课日期已过）
+    updated_classes = Class.query.filter(
+        Class.status == 'planning',
+        Class.start_date != None,
+        Class.start_date <= today
+    ).update({Class.status: 'active'}, synchronize_session='fetch')
+    
+    # 2. 排课状态: scheduled → completed（课程日期已过）
+    updated_schedules = ClassSchedule.query.filter(
+        ClassSchedule.status == 'scheduled',
+        ClassSchedule.scheduled_date < today
+    ).update({ClassSchedule.status: 'completed'}, synchronize_session='fetch')
+    
+    if updated_classes or updated_schedules:
+        db.session.commit()
+
+
+def check_class_completion(class_id):
+    """检查单个班级是否所有课题已完成 - 仅在排课变更时调用"""
+    cls = Class.query.get(class_id)
+    if not cls or cls.status == 'completed':
+        return
+    
+    total_topics = Topic.query.filter_by(project_id=cls.project_id).count()
+    if total_topics == 0:
+        return
+    
+    completed_topics = ClassSchedule.query.filter(
+        ClassSchedule.class_id == class_id,
+        ClassSchedule.status == 'completed'
+    ).count()
+    
+    if completed_topics >= total_topics:
+        cls.status = 'completed'
+        db.session.commit()
+
+
 @classes_bp.route('', methods=['GET'])
 def get_all():
-    """获取所有班级（可按培训班类型过滤）"""
-    training_type_id = request.args.get('training_type_id', type=int)
+    """获取所有班级（可按项目过滤）"""
+    sync_class_statuses()  # 自动同步状态
+    
+    project_id = request.args.get('project_id', type=int)
     status = request.args.get('status')
     
     query = Class.query
-    if training_type_id:
-        query = query.filter_by(training_type_id=training_type_id)
+    if project_id:
+        query = query.filter_by(project_id=project_id)
     if status:
         query = query.filter_by(status=status)
     
@@ -148,10 +192,11 @@ def create():
     """创建班级并自动生成课表"""
     data = request.get_json()
     
-    # 创建班级
+    # project_id
+    pid = data.get('project_id')
+    
     c = Class(
-        project_id=data.get('project_id'),
-        training_type_id=data.get('training_type_id'),
+        project_id=pid,
         name=data.get('name'),
         homeroom_id=data.get('homeroom_id'),
         start_date=date.fromisoformat(data.get('start_date')) if data.get('start_date') else None,
@@ -162,13 +207,23 @@ def create():
     
     # 自动生成课表
     auto_generate = data.get('auto_generate', True)
-    if auto_generate and c.start_date and c.training_type_id:
-        schedules = auto_schedule_class(c)
-        for s in schedules:
+    if auto_generate and c.start_date and c.project_id:
+        result = auto_schedule_class(c)
+        for s in result['schedules']:
             db.session.add(s)
     
     db.session.commit()
-    return jsonify(c.to_dict(include_schedules=True)), 201
+    
+    # 返回班级信息（含课表和冲突详情）
+    resp = c.to_dict(include_schedules=True)
+    if auto_generate and c.start_date and c.project_id:
+        resp['scheduling_report'] = {
+            'total': result['total'],
+            'conflict_count': result['conflict_count'],
+            'conflicts': result['conflicts'],
+            'topic_swaps': result['topic_swaps']
+        }
+    return jsonify(resp), 201
 
 @classes_bp.route('/<int:id>', methods=['PUT'])
 def update(id):
@@ -210,40 +265,109 @@ def regenerate_schedule(id):
         c.start_date = date.fromisoformat(data['start_date'])
     
     # 重新生成
-    if c.start_date and c.training_type_id:
-        schedules = auto_schedule_class(c)
-        for s in schedules:
+    if c.start_date and c.project_id:
+        result = auto_schedule_class(c)
+        for s in result['schedules']:
             db.session.add(s)
     
     db.session.commit()
-    return jsonify(c.to_dict(include_schedules=True))
+    
+    resp = c.to_dict(include_schedules=True)
+    if c.start_date and c.project_id:
+        resp['scheduling_report'] = {
+            'total': result['total'],
+            'conflict_count': result['conflict_count'],
+            'conflicts': result['conflicts'],
+            'topic_swaps': result['topic_swaps']
+        }
+    return jsonify(resp)
+
+
+# ==================== 三重降级排课算法 ====================
+
+def _get_occupied_teachers(target_date):
+    """获取某日已被占用的讲师ID集合"""
+    occupied = set()
+    schedules = ClassSchedule.query.filter_by(scheduled_date=target_date).all()
+    for s in schedules:
+        if s.combo and s.combo.teacher_id:
+            occupied.add(s.combo.teacher_id)
+        if s.combo_2 and s.combo_2.teacher_id:
+            occupied.add(s.combo_2.teacher_id)
+    return occupied
+
+
+def _check_homeroom_conflict(homeroom_id, target_date, exclude_class_id=None):
+    """检查班主任在某日是否有冲突"""
+    if not homeroom_id:
+        return False
+    query = ClassSchedule.query.join(Class).filter(
+        Class.homeroom_id == homeroom_id,
+        ClassSchedule.scheduled_date == target_date
+    )
+    if exclude_class_id:
+        query = query.filter(ClassSchedule.class_id != exclude_class_id)
+    return query.first() is not None
+
+
+def _find_best_combo(topic_id, target_date, occupied_teachers):
+    """
+    在该课题下寻找不冲突的最优 combo。
+    返回 (combo, conflict_type) 
+    - combo: 选中的 combo 对象
+    - conflict_type: None(无冲突) / 'teacher'(讲师冲突)
+    """
+    combos = TeacherCourseCombo.query.filter_by(topic_id=topic_id)\
+        .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
+    
+    if not combos:
+        return None, None
+    
+    # 优先找无冲突的
+    for c in combos:
+        if c.teacher_id not in occupied_teachers:
+            return c, None
+    
+    # 全部冲突，选第一个（优先级最高）
+    return combos[0], 'teacher'
 
 
 def auto_schedule_class(class_obj):
     """
-    自动为班级生成课表
-    规则：
-    1. 获取该培训班类型的8个课题
-    2. 从start_date开始，每4周排一节课
-    3. 只排周六（周日为同一课的第二天）
-    4. 避开节假日
-    5. 为每个课题预设一个默认教-课组合
+    三重降级自动排课算法：
+    
+    对每个课题（按序号排列）：
+      策略A — 换科教组合：遍历所有 combo，找不冲突的
+      策略B — 换课题顺序：与后续非固定课题交换位置后重试
+      策略C — 标红告警：选冲突最少的方案落盘
+    
+    返回: {
+        'schedules': [ClassSchedule, ...],
+        'total': int,
+        'conflict_count': int,
+        'conflicts': [{'topic': str, 'date': str, 'type': str, 'detail': str}, ...],
+        'topic_swaps': [{'from': str, 'to': str}, ...]
+    }
     """
     from config import Config
     
-    topics = Topic.query.filter_by(training_type_id=class_obj.training_type_id)\
-                       .order_by(Topic.sequence).all()
+    topics = list(Topic.query.filter_by(project_id=class_obj.project_id)
+                       .order_by(Topic.sequence).all())
     
     if not topics:
-        return []
+        return {'schedules': [], 'total': 0, 'conflict_count': 0, 'conflicts': [], 'topic_swaps': []}
     
     schedules = []
+    conflicts = []
+    topic_swaps = []
     current_date = class_obj.start_date
     
     # 确保从周六开始
     current_date = find_next_available_saturday(current_date)
     
-    for i, topic in enumerate(topics):
+    for i in range(len(topics)):
+        topic = topics[i]
+        
         # 查找可用的周六（避开节假日）
         scheduled_date = current_date
         max_attempts = 10
@@ -251,13 +375,101 @@ def auto_schedule_class(class_obj):
         while attempts < max_attempts:
             if not is_holiday(scheduled_date):
                 break
-            # 尝试下一周
             scheduled_date = scheduled_date + timedelta(days=7)
             attempts += 1
         
-        # 查找该课题的默认教-课组合
-        combo = TeacherCourseCombo.query.filter_by(topic_id=topic.id)\
-                                        .order_by(TeacherCourseCombo.id.desc()).first()
+        # 获取当天已占用资源
+        occupied_teachers = _get_occupied_teachers(scheduled_date)
+        homeroom_conflict = _check_homeroom_conflict(
+            class_obj.homeroom_id, scheduled_date, class_obj.id
+        )
+        
+        # ========== 策略A: 找不冲突的 combo ==========
+        combo, combo_conflict = _find_best_combo(topic.id, scheduled_date, occupied_teachers)
+        
+        if combo_conflict is None and not homeroom_conflict:
+            # 无冲突，直接落盘
+            schedule = ClassSchedule(
+                class_id=class_obj.id,
+                topic_id=topic.id,
+                combo_id=combo.id if combo else None,
+                scheduled_date=scheduled_date,
+                week_number=i + 1,
+                status='planning'
+            )
+            schedules.append(schedule)
+            current_date = scheduled_date + timedelta(weeks=Config.MIN_WEEKS_INTERVAL)
+            continue
+        
+        # ========== 策略B: 尝试换课题顺序 ==========
+        swapped = False
+        if combo_conflict or homeroom_conflict:
+            # 在后续未排课题中找一个非固定课题交换
+            for j in range(i + 1, len(topics)):
+                if topics[j].is_fixed:
+                    continue
+                
+                # 用替代课题试试
+                alt_combo, alt_conflict = _find_best_combo(
+                    topics[j].id, scheduled_date, occupied_teachers
+                )
+                # 如果替代课题无讲师冲突（班主任冲突仍在但至少减少一个冲突源）
+                if alt_conflict is None and not homeroom_conflict:
+                    # 交换课题
+                    topic_swaps.append({
+                        'from': topic.name,
+                        'to': topics[j].name,
+                        'reason': '讲师冲突' if combo_conflict else '班主任冲突'
+                    })
+                    topics[i], topics[j] = topics[j], topics[i]
+                    topic = topics[i]
+                    combo = alt_combo
+                    combo_conflict = None
+                    
+                    schedule = ClassSchedule(
+                        class_id=class_obj.id,
+                        topic_id=topic.id,
+                        combo_id=combo.id if combo else None,
+                        scheduled_date=scheduled_date,
+                        week_number=i + 1,
+                        status='planning'
+                    )
+                    schedules.append(schedule)
+                    swapped = True
+                    break
+        
+        if swapped:
+            current_date = scheduled_date + timedelta(weeks=Config.MIN_WEEKS_INTERVAL)
+            continue
+        
+        # ========== 策略C: 标红告警，选冲突最少的方案 ==========
+        conflict_reasons = []
+        conflict_type = None
+        
+        if homeroom_conflict:
+            # 找出哪个班级占用了班主任
+            conflicting_schedule = ClassSchedule.query.join(Class).filter(
+                Class.homeroom_id == class_obj.homeroom_id,
+                ClassSchedule.scheduled_date == scheduled_date,
+                ClassSchedule.class_id != class_obj.id
+            ).first()
+            conflicting_class_name = conflicting_schedule.class_.name if conflicting_schedule else '未知班级'
+            conflict_reasons.append(f'班主任撞课 ({conflicting_class_name})')
+            conflict_type = 'homeroom'
+        
+        if combo_conflict and combo:
+            conflict_reasons.append(f'讲师 {combo.teacher.name} 撞课')
+            if not conflict_type:
+                conflict_type = 'teacher'
+        
+        conflict_note = '周六: ' + '; '.join(conflict_reasons) if conflict_reasons else '未知冲突'
+        
+        conflicts.append({
+            'topic': topic.name,
+            'date': scheduled_date.isoformat(),
+            'type': conflict_type,
+            'detail': conflict_note
+        })
         
         schedule = ClassSchedule(
             class_id=class_obj.id,
@@ -265,11 +477,17 @@ def auto_schedule_class(class_obj):
             combo_id=combo.id if combo else None,
             scheduled_date=scheduled_date,
             week_number=i + 1,
-            status='planning'
+            status='conflict',
+            conflict_type=conflict_type,
+            notes=conflict_note
         )
         schedules.append(schedule)
-        
-        # 下一节课至少间隔4周
         current_date = scheduled_date + timedelta(weeks=Config.MIN_WEEKS_INTERVAL)
     
-    return schedules
+    return {
+        'schedules': schedules,
+        'total': len(schedules),
+        'conflict_count': len(conflicts),
+        'conflicts': conflicts,
+        'topic_swaps': topic_swaps
+    }
