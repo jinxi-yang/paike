@@ -3249,8 +3249,9 @@
             }
 
             if (cachedMonthData.plan_status === 'published') {
-                const ok = await showConfirm('重新发布确认', `${currentYear}年${currentMonth}月已发布过，确定要重新发布吗？`);
-                if (!ok) return;
+                if (!confirm(`${cachedMonthData.year}年${cachedMonthData.month}月已发布过，确定要重新发布吗？`)) {
+                    return;
+                }
             }
 
             const preview = document.getElementById('publish-preview-content');

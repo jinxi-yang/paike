@@ -2866,30 +2866,6 @@
             lucide.createIcons();
         }
 
-        // ==================== Excel 导出 ====================
-        function exportMonthExcel() {
-            const url = `${API_BASE}/schedule/export/${currentYear}/${currentMonth}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = '';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            showToast('正在导出月度课表...', 'info', 2000);
-        }
-
-        function exportClassExcel(classId) {
-            if (!classId) { showToast('未选择班级', 'warning'); return; }
-            const url = `${API_BASE}/schedule/export/class/${classId}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = '';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            showToast('正在导出班级课表...', 'info', 2000);
-        }
-
         function renderWeekView() {
             const container = document.getElementById('schedule-container');
             if (!cachedMonthData) {
@@ -3249,8 +3225,9 @@
             }
 
             if (cachedMonthData.plan_status === 'published') {
-                const ok = await showConfirm('重新发布确认', `${currentYear}年${currentMonth}月已发布过，确定要重新发布吗？`);
-                if (!ok) return;
+                if (!confirm(`${cachedMonthData.year}年${cachedMonthData.month}月已发布过，确定要重新发布吗？`)) {
+                    return;
+                }
             }
 
             const preview = document.getElementById('publish-preview-content');

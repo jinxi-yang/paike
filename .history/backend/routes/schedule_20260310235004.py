@@ -96,72 +96,6 @@ def _build_publish_checklist(year, month):
                 'date': s.scheduled_date.isoformat() if s.scheduled_date else None
             })
 
-    # 主动扫描：检查同日同讲师/同班主任未标记的冲突
-    seen_conflict_ids = set(item['schedule_id'] for item in unresolved)
-    from collections import defaultdict
-    by_date = defaultdict(list)
-    for s in month_schedules:
-        if s.id not in seen_conflict_ids and s.status not in ('completed', 'cancelled'):
-            by_date[s.scheduled_date].append(s)
-
-    for dt, day_schedules in by_date.items():
-        if len(day_schedules) < 2:
-            continue
-        # 检查周六讲师冲突
-        teacher_day1 = defaultdict(list)
-        for s in day_schedules:
-            if s.combo and s.combo.teacher_id:
-                teacher_day1[s.combo.teacher_id].append(s)
-        for tid, slist in teacher_day1.items():
-            if len(slist) >= 2:
-                names = ', '.join(s.class_.name for s in slist if s.class_)
-                teacher_name = slist[0].combo.teacher.name if slist[0].combo and slist[0].combo.teacher else '未知'
-                pending.append({
-                    'schedule_id': slist[0].id,
-                    'class_name': names,
-                    'topic_name': None,
-                    'date': dt.isoformat() if dt else None,
-                    'reason': f'周六讲师 {teacher_name} 同日为 {len(slist)} 个班级授课',
-                    'suggestion': '建议错开日期或更换讲师',
-                    'impact_scope': f'涉及 {len(slist)} 个班级'
-                })
-        # 检查周日讲师冲突
-        teacher_day2 = defaultdict(list)
-        for s in day_schedules:
-            if s.combo_2 and s.combo_2.teacher_id:
-                teacher_day2[s.combo_2.teacher_id].append(s)
-        for tid, slist in teacher_day2.items():
-            if len(slist) >= 2:
-                names = ', '.join(s.class_.name for s in slist if s.class_)
-                teacher_name = slist[0].combo_2.teacher.name if slist[0].combo_2 and slist[0].combo_2.teacher else '未知'
-                pending.append({
-                    'schedule_id': slist[0].id,
-                    'class_name': names,
-                    'topic_name': None,
-                    'date': dt.isoformat() if dt else None,
-                    'reason': f'周日讲师 {teacher_name} 同日为 {len(slist)} 个班级授课',
-                    'suggestion': '建议错开日期或更换讲师',
-                    'impact_scope': f'涉及 {len(slist)} 个班级'
-                })
-        # 检查班主任冲突
-        homeroom_map = defaultdict(list)
-        for s in day_schedules:
-            if s.class_ and s.class_.homeroom_id:
-                homeroom_map[s.class_.homeroom_id].append(s)
-        for hid, slist in homeroom_map.items():
-            if len(slist) >= 2:
-                names = ', '.join(s.class_.name for s in slist if s.class_)
-                hr_name = slist[0].class_.homeroom.name if slist[0].class_ and slist[0].class_.homeroom else '未知'
-                pending.append({
-                    'schedule_id': slist[0].id,
-                    'class_name': names,
-                    'topic_name': None,
-                    'date': dt.isoformat() if dt else None,
-                    'reason': f'班主任 {hr_name} 同日负责 {len(slist)} 个班级',
-                    'suggestion': '如为合班属正常情况，否则建议错开日期',
-                    'impact_scope': f'涉及 {len(slist)} 个班级'
-                })
-
     return {
         'resolved': resolved,
         'pending': pending,
@@ -506,13 +440,6 @@ def adjust_schedule():
     if 'notes' in data:
         schedule.notes = data['notes']
     
-    # 成功调整后，清除冲突标记（如果之前是冲突状态）
-    if schedule.status == 'conflict':
-        schedule.status = 'scheduled'
-        schedule.conflict_type = None
-        if schedule.notes and ('撞课' in schedule.notes or '手动' in schedule.notes or '冲突' in schedule.notes):
-            schedule.notes = None
-    
     db.session.commit()
     return jsonify(schedule.to_dict())
 
@@ -595,12 +522,6 @@ def move_to_week():
         schedule.status = 'conflict'
         schedule.conflict_type = 'teacher' if '讲师' in str(warnings) else 'homeroom'
         schedule.notes = '手动移动: ' + '; '.join(warnings)
-    else:
-        # 无冲突移动，清除之前的冲突标记
-        if schedule.status == 'conflict':
-            schedule.status = 'scheduled'
-            schedule.conflict_type = None
-            schedule.notes = None
     db.session.commit()
     
     return jsonify(schedule.to_dict())
@@ -670,7 +591,6 @@ def merge_info():
 @schedule_bp.route('/merge', methods=['POST'])
 def merge_classes():
     """合班操作 - 多个班级同一课题合并上课，统一讲师和日期"""
-    import json
     data = request.get_json()
     schedule_ids = data.get('schedule_ids', [])
     merged_date = data.get('merged_date')
@@ -701,22 +621,9 @@ def merge_classes():
     else:
         unified_date = main_schedule.scheduled_date
     
-    # 合班前保存每条记录的快照（拆分时用于恢复）
-    for s in schedules:
-        snapshot = {
-            'scheduled_date': s.scheduled_date.isoformat() if s.scheduled_date else None,
-            'combo_id': s.combo_id,
-            'combo_id_2': s.combo_id_2,
-            'status': s.status,
-            'conflict_type': s.conflict_type,
-            'notes': s.notes
-        }
-        s.merge_snapshot = json.dumps(snapshot, ensure_ascii=False)
-    
     # 更新所有记录的统一信息
     for s in schedules:
         s.scheduled_date = unified_date
-        s.status = 'merged'
         if merged_combo_id:
             s.combo_id = int(merged_combo_id)
         if merged_combo_id_2:
@@ -739,34 +646,15 @@ def merge_classes():
 
 @schedule_bp.route('/unmerge/<int:schedule_id>', methods=['POST'])
 def unmerge_class(schedule_id):
-    """取消合班 - 级联清除所有相关合班记录，并从快照恢复原始状态"""
-    import json
+    """取消合班 - 级联清除所有相关合班记录"""
     schedule = ClassSchedule.query.get_or_404(schedule_id)
     
-    def _restore_from_snapshot(record):
-        """从 merge_snapshot 恢复记录的原始状态"""
-        if not record.merge_snapshot:
-            return
-        try:
-            snap = json.loads(record.merge_snapshot)
-            if snap.get('scheduled_date'):
-                record.scheduled_date = date.fromisoformat(snap['scheduled_date'])
-            if 'combo_id' in snap:
-                record.combo_id = snap['combo_id']
-            if 'combo_id_2' in snap:
-                record.combo_id_2 = snap['combo_id_2']
-            record.status = snap.get('status', 'scheduled')
-            record.conflict_type = snap.get('conflict_type')
-            record.notes = snap.get('notes')
-        except (json.JSONDecodeError, ValueError):
-            pass
-        record.merge_snapshot = None
-        record.merged_with = None
-    
-    # 情况1: 如果是主记录（被其他记录引用），同时恢复所有次记录
+    # 情况1: 如果是主记录（被其他记录引用），同时清除所有次记录
     secondary_records = ClassSchedule.query.filter_by(merged_with=schedule_id).all()
     for sec in secondary_records:
-        _restore_from_snapshot(sec)
+        sec.merged_with = None
+        if sec.notes and '合班' in sec.notes:
+            sec.notes = None
     
     # 情况2: 如果是次记录（引用其他主记录），也检查主记录
     if schedule.merged_with:
@@ -778,14 +666,17 @@ def unmerge_class(schedule_id):
                 ClassSchedule.id != schedule_id
             ).count()
             if remaining == 0:
-                # 没有其他次记录了，主记录也恢复
-                _restore_from_snapshot(main_record)
+                # 没有其他次记录了，清除主记录的合班备注
+                if main_record.notes and '合班' in main_record.notes:
+                    main_record.notes = None
     
-    # 恢复当前记录
-    _restore_from_snapshot(schedule)
+    # 清除当前记录
+    schedule.merged_with = None
+    if schedule.notes and '合班' in schedule.notes:
+        schedule.notes = None
     
     db.session.commit()
-    return jsonify({'message': '拆分成功，已恢复原始状态', 'schedule': schedule.to_dict()})
+    return jsonify({'message': '拆分成功', 'schedule': schedule.to_dict()})
 
 
 # ==================== 月度计划发布 ====================
@@ -845,7 +736,7 @@ def publish_month():
     ClassSchedule.query.filter(
         ClassSchedule.scheduled_date >= start_date,
         ClassSchedule.scheduled_date < end_date,
-        ClassSchedule.status.in_(['scheduled', 'planning', 'merged'])
+        ClassSchedule.status.in_(['scheduled', 'planning'])
     ).update({'status': 'confirmed'}, synchronize_session=False)
 
     if force_publish and unresolved:
@@ -854,7 +745,6 @@ def publish_month():
             schedule = ClassSchedule.query.get(sid)
             if schedule:
                 schedule.notes = f"{schedule.notes or ''}\n[强制发布备注] {force_note}".strip()
-                schedule.status = 'confirmed'
 
     db.session.commit()
 
@@ -863,40 +753,6 @@ def publish_month():
         'plan': plan.to_dict(),
         'forced': force_publish,
         'forced_conflict_count': len(unresolved) if force_publish else 0
-    })
-
-
-@schedule_bp.route('/unpublish', methods=['POST'])
-def unpublish_month():
-    """取消发布月度计划，回退为草稿"""
-    data = request.get_json()
-    year = data.get('year')
-    month = data.get('month')
-
-    if not year or not month:
-        return jsonify({'error': '缺少 year/month'}), 400
-
-    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
-    if not plan or plan.status != 'published':
-        return jsonify({'error': '该月计划未发布，无需取消'}), 400
-
-    plan.status = 'draft'
-    plan.published_at = None
-    plan.updated_at = datetime.now()
-
-    # 将该月 confirmed 的课程回退为 scheduled
-    start_date, end_date = _month_range(year, month)
-    ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date,
-        ClassSchedule.status == 'confirmed'
-    ).update({'status': 'scheduled'}, synchronize_session=False)
-
-    db.session.commit()
-
-    return jsonify({
-        'message': f'{year}年{month}月计划已取消发布，回退为草稿',
-        'plan': plan.to_dict()
     })
 
 
@@ -1043,25 +899,9 @@ def delete_schedule(schedule_id):
     if schedule.status == 'completed':
         return jsonify({'error': '已完成的课程不能删除'}), 400
     
-    # 如果是合班主课程，恢复其他课程的原始状态
-    import json as _json_mod
+    # 如果是合班主课程，取消其他课程的合班标记
     merged_schedules = ClassSchedule.query.filter_by(merged_with=schedule_id).all()
     for ms in merged_schedules:
-        if ms.merge_snapshot:
-            try:
-                snap = _json_mod.loads(ms.merge_snapshot)
-                if snap.get('scheduled_date'):
-                    ms.scheduled_date = date.fromisoformat(snap['scheduled_date'])
-                if 'combo_id' in snap:
-                    ms.combo_id = snap['combo_id']
-                if 'combo_id_2' in snap:
-                    ms.combo_id_2 = snap['combo_id_2']
-                ms.status = snap.get('status', 'scheduled')
-                ms.conflict_type = snap.get('conflict_type')
-                ms.notes = snap.get('notes')
-            except (ValueError, _json_mod.JSONDecodeError):
-                pass
-            ms.merge_snapshot = None
         ms.merged_with = None
     
     db.session.delete(schedule)
@@ -1075,271 +915,6 @@ def get_schedule_detail(schedule_id):
     """获取单个排课详情"""
     schedule = ClassSchedule.query.get_or_404(schedule_id)
     return jsonify(schedule.to_dict())
-
-
-# ==================== Excel 导出 ====================
-
-def _status_cn(status, merged_with=None, notes=None):
-    """状态中文映射"""
-    if merged_with or (notes and '合班主记录' in (notes or '')):
-        return '合班'
-    mapping = {
-        'scheduled': '已排课',
-        'completed': '已完成',
-        'confirmed': '已确认',
-        'conflict': '冲突',
-        'planning': '预排',
-        'cancelled': '已取消',
-        'merged': '合班',
-    }
-    return mapping.get(status, status or '-')
-
-
-def _apply_header_style(ws, header_row, col_count):
-    """为表头行应用蓝底白字加粗样式"""
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    header_fill = PatternFill(start_color='2563EB', end_color='2563EB', fill_type='solid')
-    header_font = Font(name='Microsoft YaHei', bold=True, color='FFFFFF', size=11)
-    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    thin_border = Border(
-        bottom=Side(style='thin', color='B0C4DE')
-    )
-    for col in range(1, col_count + 1):
-        cell = ws.cell(row=header_row, column=col)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = header_align
-        cell.border = thin_border
-
-
-def _auto_width(ws, min_width=8, max_width=30):
-    """根据内容自动调整列宽"""
-    for col in ws.columns:
-        col_letter = col[0].column_letter
-        lengths = []
-        for cell in col:
-            val = str(cell.value) if cell.value is not None else ''
-            # 中文字符按2倍宽度估算
-            char_len = sum(2 if ord(c) > 127 else 1 for c in val)
-            lengths.append(char_len)
-        best = max(lengths) if lengths else min_width
-        ws.column_dimensions[col_letter].width = max(min_width, min(best + 2, max_width))
-
-
-@schedule_bp.route('/export/<int:year>/<int:month>', methods=['GET'])
-def export_month_excel(year, month):
-    """导出月度课表 Excel（给讲师、班主任等工作人员看）"""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill
-    from io import BytesIO
-    from flask import send_file
-
-    # 月份起止
-    start_date = date(year, month, 1)
-    end_date = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-
-    schedules = ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date
-    ).order_by(ClassSchedule.scheduled_date).all()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = f'{year}年{month}月排课'
-
-    # ---- 标题行 ----
-    title_text = f'北清商学院 {year}年{month}月 排课计划'
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11)
-    title_cell = ws.cell(row=1, column=1, value=title_text)
-    title_cell.font = Font(name='Microsoft YaHei', bold=True, size=16, color='1E293B')
-    title_cell.alignment = Alignment(horizontal='center', vertical='center')
-    ws.row_dimensions[1].height = 36
-
-    # 副标题
-    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
-    status_text = '已发布' if plan and plan.status == 'published' else '草稿'
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11)
-    sub_cell = ws.cell(row=2, column=1, value=f'状态: {status_text}  |  导出时间: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
-    sub_cell.font = Font(name='Microsoft YaHei', size=10, color='64748B')
-    sub_cell.alignment = Alignment(horizontal='center')
-
-    # ---- 表头 ----
-    headers = ['周次', '日期(周六)', '日期(周日)', '班级', '课题', '周六讲师', '周六课程', '周日讲师', '周日课程', '班主任', '状态']
-    header_row = 4
-    for col_idx, h in enumerate(headers, 1):
-        ws.cell(row=header_row, column=col_idx, value=h)
-    _apply_header_style(ws, header_row, len(headers))
-
-    # ---- 按周分组填充数据 ----
-    # 构建周结构
-    curr_week_start = start_date - timedelta(days=start_date.weekday())
-    week_idx = 0
-    row = header_row + 1
-
-    conflict_font = Font(name='Microsoft YaHei', color='DC2626', bold=True)
-    completed_fill = PatternFill(start_color='F0FDF4', end_color='F0FDF4', fill_type='solid')
-    normal_font = Font(name='Microsoft YaHei', size=10)
-    center_align = Alignment(horizontal='center', vertical='center')
-
-    while curr_week_start < end_date:
-        week_end = curr_week_start + timedelta(days=6)
-        week_idx += 1
-
-        sat = curr_week_start + timedelta(days=(5 - curr_week_start.weekday()) % 7)
-        sun = sat + timedelta(days=1)
-
-        week_schedules = [s for s in schedules if curr_week_start <= s.scheduled_date <= week_end]
-
-        if not week_schedules:
-            curr_week_start += timedelta(weeks=1)
-            continue
-
-        for s in week_schedules:
-            day1_teacher = s.combo.teacher.name if s.combo and s.combo.teacher else '待定'
-            day1_course = s.combo.course.name if s.combo and s.combo.course else '待定'
-            day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else day1_teacher
-            day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else day1_course
-            homeroom = s.class_.homeroom.name if s.class_ and s.class_.homeroom else '未分配'
-            status = _status_cn(s.status, s.merged_with, s.notes)
-
-            values = [
-                f'第{week_idx}周',
-                sat.strftime('%m/%d'),
-                sun.strftime('%m/%d'),
-                s.class_.name if s.class_ else '-',
-                s.topic.name if s.topic else '-',
-                day1_teacher,
-                day1_course,
-                day2_teacher,
-                day2_course,
-                homeroom,
-                status
-            ]
-
-            for col_idx, val in enumerate(values, 1):
-                cell = ws.cell(row=row, column=col_idx, value=val)
-                cell.font = normal_font
-                cell.alignment = center_align
-
-            # 冲突行红色高亮状态
-            if s.status == 'conflict':
-                ws.cell(row=row, column=11).font = conflict_font
-            # 已完成行浅绿底
-            if s.status in ('completed', 'confirmed'):
-                for col_idx in range(1, len(headers) + 1):
-                    ws.cell(row=row, column=col_idx).fill = completed_fill
-
-            row += 1
-
-        curr_week_start += timedelta(weeks=1)
-
-    _auto_width(ws)
-
-    # 写入流
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f'排课计划_{year}年{month}月.xlsx'
-    return send_file(
-        output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True,
-        download_name=filename
-    )
-
-
-@schedule_bp.route('/export/class/<int:class_id>', methods=['GET'])
-def export_class_excel(class_id):
-    """导出单个班级课表 Excel（给学生看）"""
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill
-    from io import BytesIO
-    from flask import send_file
-
-    cls = Class.query.get_or_404(class_id)
-    schedules = ClassSchedule.query.filter_by(class_id=class_id)\
-        .order_by(ClassSchedule.scheduled_date).all()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = f'{cls.name} 课程表'
-
-    # ---- 标题 ----
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
-    title_cell = ws.cell(row=1, column=1, value=f'{cls.name} 课程安排表')
-    title_cell.font = Font(name='Microsoft YaHei', bold=True, size=16, color='1E293B')
-    title_cell.alignment = Alignment(horizontal='center', vertical='center')
-    ws.row_dimensions[1].height = 36
-
-    # 班级信息行
-    homeroom = cls.homeroom.name if cls.homeroom else '未分配'
-    project_name = cls.project.name if cls.project else '-'
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
-    info_cell = ws.cell(row=2, column=1, value=f'项目: {project_name}  |  班主任: {homeroom}  |  导出时间: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
-    info_cell.font = Font(name='Microsoft YaHei', size=10, color='64748B')
-    info_cell.alignment = Alignment(horizontal='center')
-
-    # ---- 表头 ----
-    headers = ['序号', '日期(周六)', '日期(周日)', '课题', '周六讲师', '周六课程', '周日讲师', '周日课程']
-    header_row = 4
-    for col_idx, h in enumerate(headers, 1):
-        ws.cell(row=header_row, column=col_idx, value=h)
-    _apply_header_style(ws, header_row, len(headers))
-
-    # ---- 数据行 ----
-    normal_font = Font(name='Microsoft YaHei', size=10)
-    center_align = Alignment(horizontal='center', vertical='center')
-    completed_fill = PatternFill(start_color='F0FDF4', end_color='F0FDF4', fill_type='solid')
-
-    row = header_row + 1
-    for idx, s in enumerate(schedules, 1):
-        sat = s.scheduled_date
-        sun = sat + timedelta(days=1) if sat else None
-
-        day1_teacher = s.combo.teacher.name if s.combo and s.combo.teacher else '待定'
-        day1_course = s.combo.course.name if s.combo and s.combo.course else '待定'
-        day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else day1_teacher
-        day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else day1_course
-
-        values = [
-            idx,
-            sat.strftime('%Y-%m-%d') if sat else '-',
-            sun.strftime('%Y-%m-%d') if sun else '-',
-            s.topic.name if s.topic else '-',
-            day1_teacher,
-            day1_course,
-            day2_teacher,
-            day2_course,
-        ]
-
-        for col_idx, val in enumerate(values, 1):
-            cell = ws.cell(row=row, column=col_idx, value=val)
-            cell.font = normal_font
-            cell.alignment = center_align
-
-        # 已完成行浅绿底
-        if s.status in ('completed', 'confirmed'):
-            for col_idx in range(1, len(headers) + 1):
-                ws.cell(row=row, column=col_idx).fill = completed_fill
-
-        row += 1
-
-    _auto_width(ws)
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f'课程表_{cls.name}.xlsx'
-    return send_file(
-        output,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True,
-        download_name=filename
-    )
-
-
 
 @schedule_bp.route('/generate', methods=['POST'])
 def generate_schedule():
@@ -1361,17 +936,6 @@ def generate_schedule():
         else:
             end_date = date(year, month + 1, 1)
             
-        # 先清除其他月份对即将删除记录的 merged_with 引用
-        to_delete_ids = [s.id for s in ClassSchedule.query.filter(
-            ClassSchedule.scheduled_date >= start_date,
-            ClassSchedule.scheduled_date < end_date,
-            ClassSchedule.status.in_(['scheduled', 'planning', 'conflict'])
-        ).all()]
-        if to_delete_ids:
-            ClassSchedule.query.filter(
-                ClassSchedule.merged_with.in_(to_delete_ids)
-            ).update({ClassSchedule.merged_with: None, ClassSchedule.merge_snapshot: None}, synchronize_session=False)
-        
         ClassSchedule.query.filter(
             ClassSchedule.scheduled_date >= start_date,
             ClassSchedule.scheduled_date < end_date,

@@ -1341,7 +1341,6 @@ def export_class_excel(class_id):
 
 
 
-@schedule_bp.route('/generate', methods=['POST'])
 def generate_schedule():
     """根据约束条件生成/重新生成月度排课"""
     data = request.get_json()
