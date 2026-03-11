@@ -151,9 +151,9 @@ def sync_class_statuses():
 
 
 def check_class_completion(class_id):
-    """检查单个班级是否所有课题已完成 - 仅在排课变更时调用（含反向纠正）"""
+    """检查单个班级是否所有课题已完成 - 仅在排课变更时调用"""
     cls = Class.query.get(class_id)
-    if not cls:
+    if not cls or cls.status == 'completed':
         return
     
     total_topics = Topic.query.filter_by(project_id=cls.project_id).count()
@@ -166,14 +166,8 @@ def check_class_completion(class_id):
     ).count()
     
     if completed_topics >= total_topics:
-        if cls.status != 'completed':
-            cls.status = 'completed'
-            db.session.commit()
-    else:
-        # 反向纠正：班级标记为completed但仍有未完成课题
-        if cls.status == 'completed':
-            cls.status = 'active'
-            db.session.commit()
+        cls.status = 'completed'
+        db.session.commit()
 
 
 @classes_bp.route('', methods=['GET'])

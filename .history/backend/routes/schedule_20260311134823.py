@@ -1119,11 +1119,7 @@ def _apply_header_style(ws, header_row, col_count):
 def _auto_width(ws, min_width=8, max_width=30):
     """根据内容自动调整列宽"""
     for col in ws.columns:
-        # 跳过 MergedCell（合并单元格占位对象没有 column_letter）
-        first_cell = col[0]
-        if not hasattr(first_cell, 'column_letter'):
-            continue
-        col_letter = first_cell.column_letter
+        col_letter = col[0].column_letter
         lengths = []
         for cell in col:
             val = str(cell.value) if cell.value is not None else ''
@@ -1205,19 +1201,15 @@ def export_month_excel(year, month):
         for s in week_schedules:
             day1_teacher = s.combo.teacher.name if s.combo and s.combo.teacher else '待定'
             day1_course = s.combo.course.name if s.combo and s.combo.course else '待定'
-            day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else '待定'
-            day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else '待定'
+            day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else day1_teacher
+            day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else day1_course
             homeroom = s.class_.homeroom.name if s.class_ and s.class_.homeroom else '未分配'
             status = _status_cn(s.status, s.merged_with, s.notes)
 
-            # 使用实际排课日期而非计算的周六
-            actual_sat = s.scheduled_date
-            actual_sun = s.scheduled_date + timedelta(days=1)
-
             values = [
                 f'第{week_idx}周',
-                actual_sat.strftime('%m/%d'),
-                actual_sun.strftime('%m/%d'),
+                sat.strftime('%m/%d'),
+                sun.strftime('%m/%d'),
                 s.class_.name if s.class_ else '-',
                 s.topic.name if s.topic else '-',
                 day1_teacher,
@@ -1311,8 +1303,8 @@ def export_class_excel(class_id):
 
         day1_teacher = s.combo.teacher.name if s.combo and s.combo.teacher else '待定'
         day1_course = s.combo.course.name if s.combo and s.combo.course else '待定'
-        day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else '待定'
-        day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else '待定'
+        day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else day1_teacher
+        day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else day1_course
 
         values = [
             idx,

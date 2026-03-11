@@ -113,23 +113,19 @@ def init_class_progress():
             })
             continue
         
-        # 检查是否已有该课题的排课记录（可能存在多条重复）
-        all_existing = ClassSchedule.query.filter_by(
+        # 检查是否已有该课题的排课记录
+        existing = ClassSchedule.query.filter_by(
             class_id=class_id, topic_id=topic_id
-        ).all()
+        ).first()
         
-        if all_existing and not clear_existing:
-            # 更新第一条记录，删除多余的重复记录
-            keep = all_existing[0]
-            for dup in all_existing[1:]:
-                db.session.delete(dup)
-            
-            keep.combo_id = combo_id
-            keep.combo_id_2 = combo_id_2 if combo_id_2 else None
+        if existing and not clear_existing:
+            # 更新已有记录
+            existing.combo_id = combo_id
+            existing.combo_id_2 = combo_id_2 if combo_id_2 else None
             parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            keep.scheduled_date = parsed_date
-            keep.status = 'completed' if parsed_date < today else 'scheduled'
-            created.append(keep.to_dict())
+            existing.scheduled_date = parsed_date
+            existing.status = 'completed' if parsed_date < today else 'scheduled'
+            created.append(existing.to_dict())
         else:
             # 新建排课记录
             parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
