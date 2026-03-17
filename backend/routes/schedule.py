@@ -3,7 +3,7 @@
 """
 from flask import Blueprint, jsonify, request
 from datetime import date, datetime, timedelta
-from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo, Topic, ScheduleConstraint
+from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo, Topic, ScheduleConstraint, Homeroom, MergeConfig
 import requests
 import json as _json
 
@@ -46,7 +46,7 @@ def _build_publish_checklist(year, month):
     resolved = []
 
     for s in month_schedules:
-        if s.status == 'conflict':
+        if s.conflict_type:
             reason = s.notes or '冲突原因未记录'
             same_day_count = ClassSchedule.query.filter(
                 ClassSchedule.scheduled_date == s.scheduled_date
@@ -97,11 +97,12 @@ def _build_publish_checklist(year, month):
             })
 
     # 主动扫描：检查同日同讲师/同班主任未标记的冲突
+    # Bug 5 fix: 排除合班记录（merged_with 不为空的次记录），避免合班共用讲师/班主任被误报
     seen_conflict_ids = set(item['schedule_id'] for item in unresolved)
     from collections import defaultdict
     by_date = defaultdict(list)
     for s in month_schedules:
-        if s.id not in seen_conflict_ids and s.status not in ('completed', 'cancelled'):
+        if s.id not in seen_conflict_ids and s.status not in ('completed', 'cancelled') and not s.merged_with:
             by_date[s.scheduled_date].append(s)
 
     for dt, day_schedules in by_date.items():
@@ -143,15 +144,17 @@ def _build_publish_checklist(year, month):
                     'suggestion': '建议错开日期或更换讲师',
                     'impact_scope': f'涉及 {len(slist)} 个班级'
                 })
-        # 检查班主任冲突
+        # 检查班主任冲突 — 使用有效班主任（override优先）
         homeroom_map = defaultdict(list)
         for s in day_schedules:
-            if s.class_ and s.class_.homeroom_id:
-                homeroom_map[s.class_.homeroom_id].append(s)
+            effective_hr = s.homeroom_override_id or (s.class_.homeroom_id if s.class_ else None)
+            if effective_hr:
+                homeroom_map[effective_hr].append(s)
         for hid, slist in homeroom_map.items():
             if len(slist) >= 2:
                 names = ', '.join(s.class_.name for s in slist if s.class_)
-                hr_name = slist[0].class_.homeroom.name if slist[0].class_ and slist[0].class_.homeroom else '未知'
+                hr_obj = Homeroom.query.get(hid)
+                hr_name = hr_obj.name if hr_obj else '未知'
                 pending.append({
                     'schedule_id': slist[0].id,
                     'class_name': names,
@@ -306,8 +309,25 @@ def get_month_schedule(year, month):
         week_end = curr_week_start + timedelta(days=6)
         week_key = curr_week_start.isoformat()
         
-        # 查找该周的课程
-        week_schedules = [s.to_dict() for s in schedules if curr_week_start <= s.scheduled_date <= week_end]
+        # 查找该周的课程，并附加间隔信息
+        week_schedules = []
+        for s in schedules:
+            if not (curr_week_start <= s.scheduled_date <= week_end):
+                continue
+            s_dict = s.to_dict()
+            # 查询该班级上一次课的日期（在当前课之前的最晚一次）
+            prev = ClassSchedule.query.filter(
+                ClassSchedule.class_id == s.class_id,
+                ClassSchedule.scheduled_date < s.scheduled_date,
+                ClassSchedule.status.in_(['completed', 'scheduled'])
+            ).order_by(ClassSchedule.scheduled_date.desc()).first()
+            if prev:
+                s_dict['last_date'] = prev.scheduled_date.isoformat()
+                s_dict['interval_days'] = (s.scheduled_date - prev.scheduled_date).days
+            else:
+                s_dict['last_date'] = None
+                s_dict['interval_days'] = None
+            week_schedules.append(s_dict)
         
         weeks_data.append({
             'week_start': week_key,
@@ -332,6 +352,91 @@ def get_month_schedule(year, month):
     })
 
 
+# ==================== 冲突重检公共函数 ====================
+
+def _recheck_conflicts_for_dates(dates):
+    """对指定日期集合内的所有活跃排课记录重新检测冲突，更新 conflict_type。
+    
+    应在所有修改排课数据的写操作后调用，确保 DB 中的 conflict_type 始终准确。
+    调用前请确保已 flush 当前事务（让新数据可查询）。
+    """
+    if not dates:
+        return
+    for check_date in dates:
+        if check_date is None:
+            continue
+        same_day = ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date == check_date,
+            ClassSchedule.status.in_(['scheduled', 'completed']),
+            ClassSchedule.merged_with.is_(None)
+        ).all()
+
+        for s in same_day:
+            new_conflict = None
+            conflict_notes = []
+            # 检查讲师冲突 —— 周六(combo)
+            if s.combo_id:
+                c1 = TeacherCourseCombo.query.get(s.combo_id)
+                if c1 and c1.teacher_id:
+                    for other in same_day:
+                        if other.id == s.id:
+                            continue
+                        if other.combo_id:
+                            oc1 = TeacherCourseCombo.query.get(other.combo_id)
+                            if oc1 and oc1.teacher_id == c1.teacher_id:
+                                new_conflict = 'teacher'
+                                t_name = c1.teacher.name if c1.teacher else '?'
+                                o_name = other.class_.name if other.class_ else '?'
+                                conflict_notes.append(f'讲师 {t_name} 撞课 ({o_name})')
+                                break
+            # 检查讲师冲突 —— 周日(combo_2)
+            if not new_conflict and s.combo_id_2:
+                c2 = TeacherCourseCombo.query.get(s.combo_id_2)
+                if c2 and c2.teacher_id:
+                    for other in same_day:
+                        if other.id == s.id:
+                            continue
+                        if other.combo_id_2:
+                            oc2 = TeacherCourseCombo.query.get(other.combo_id_2)
+                            if oc2 and oc2.teacher_id == c2.teacher_id:
+                                new_conflict = 'teacher'
+                                t_name = c2.teacher.name if c2.teacher else '?'
+                                o_name = other.class_.name if other.class_ else '?'
+                                conflict_notes.append(f'讲师 {t_name} 撞课 ({o_name})')
+                                break
+
+            # 检查班主任冲突
+            if not new_conflict:
+                eff_hr = s.homeroom_override_id or (s.class_.homeroom_id if s.class_ else None)
+                if eff_hr:
+                    for other in same_day:
+                        if other.id == s.id:
+                            continue
+                        other_hr = other.homeroom_override_id or (other.class_.homeroom_id if other.class_ else None)
+                        if other_hr == eff_hr:
+                            new_conflict = 'homeroom'
+                            hr_obj = Homeroom.query.get(eff_hr)
+                            hr_name = hr_obj.name if hr_obj else '?'
+                            o_name = other.class_.name if other.class_ else '?'
+                            conflict_notes.append(f'班主任 {hr_name} 撞课 ({o_name})')
+                            break
+
+            # 更新 conflict_type
+            if s.conflict_type != new_conflict:
+                s.conflict_type = new_conflict
+                if new_conflict and conflict_notes:
+                    # 设置冲突 notes（保留合班相关的 notes）
+                    if s.notes and '合班' in s.notes:
+                        pass  # 保留合班信息
+                    else:
+                        s.notes = '；'.join(conflict_notes)
+                elif not new_conflict:
+                    # 冲突解除，清除过时的冲突 notes
+                    if s.notes and ('撞课' in s.notes or '手动' in s.notes or '冲突' in s.notes):
+                        if '合班' not in s.notes:
+                            s.notes = None
+
+
 # ==================== 排课调整 ====================
 
 @schedule_bp.route('/adjust', methods=['POST'])
@@ -347,7 +452,18 @@ def adjust_schedule():
     if schedule.status in ('completed', 'cancelled'):
         return jsonify({'error': f'该课程已{schedule.status}，无法调整'}), 400
     
-    # 强制模式：跳过所有冲突检查，直接应用修改并标记为冲突
+    # Bug 7 fix: 合班记录调整保护 — 提醒用户需先拆分
+    if schedule.merged_with:
+        return jsonify({'error': '该课程已合班，请先拆分后再调整'}), 400
+    # 检查是否为合班主记录（被其他记录引用）
+    has_secondary = ClassSchedule.query.filter_by(merged_with=schedule_id).count()
+    if has_secondary > 0 and not force:
+        return jsonify({
+            'warning': f'该课程是合班主记录（含 {has_secondary} 个合班班级），调整将影响合班关系。建议先拆分后再调整，或强制保存。',
+            'is_merge_master': True
+        }), 200
+    
+    # 强制模式：跳过冲突检查直接应用修改，但仍走重检测流程
     if force:
         conflict_notes = []
         if 'new_date' in data:
@@ -357,167 +473,181 @@ def adjust_schedule():
             schedule.combo_id = data['combo_id']
             new_combo = TeacherCourseCombo.query.get(data['combo_id']) if data['combo_id'] else None
             if new_combo:
-                conflict_notes.append(f'周六讲师强制改为 {new_combo.teacher.name}')
+                conflict_notes.append(f'周六讲师手动改为 {new_combo.teacher.name}')
         if 'combo_id_2' in data:
             schedule.combo_id_2 = data['combo_id_2']
             new_combo2 = TeacherCourseCombo.query.get(data['combo_id_2']) if data['combo_id_2'] else None
             if new_combo2:
-                conflict_notes.append(f'周日讲师强制改为 {new_combo2.teacher.name}')
-        schedule.status = 'conflict'
-        schedule.notes = '手动强制调整: ' + '; '.join(conflict_notes) if conflict_notes else '手动强制调整'
-        db.session.commit()
-        return jsonify(schedule.to_dict())
+                conflict_notes.append(f'周日讲师手动改为 {new_combo2.teacher.name}')
+        # 记录手动调整信息到notes，但不设conflict_type（由重检测决定）
+        schedule.notes = '手动调整: ' + '; '.join(conflict_notes) if conflict_notes else schedule.notes
+        # 不再 return，继续走下面的冲突重检测流程
     
-    # 调整日期
-    if 'new_date' in data:
-        new_date = date.fromisoformat(data['new_date'])
-        
-        # 检查是否是周六
-        if new_date.weekday() != 5:
-            return jsonify({'error': '排课日期必须是周六'}), 400
-        
-        # 检查节假日
-        if is_holiday(new_date):
-            return jsonify({
-                'warning': '该日期是节假日',
-                'holiday': True,
-                'proceed': False
-            }), 200
-        
-        # 检查班主任冲突（周六及周日）
-        class_obj = schedule.class_
-        if class_obj and class_obj.homeroom_id:
-            # check saturday
-            homeroom_conflicts = ClassSchedule.query.join(Class).filter(
-                Class.homeroom_id == class_obj.homeroom_id,
-                ClassSchedule.scheduled_date == new_date,
-                ClassSchedule.id != schedule_id
-            ).all()
-            if homeroom_conflicts:
+    else:
+        # 非强制模式：正常调整（含冲突检查）
+        # 调整日期
+        if 'new_date' in data:
+            new_date = date.fromisoformat(data['new_date'])
+            
+            # 检查是否是周六
+            if new_date.weekday() != 5:
+                return jsonify({'error': '排课日期必须是周六'}), 400
+            
+            # 禁止移到已过去的日期
+            if new_date < date.today():
+                return jsonify({'error': f'不能将课程移到已过去的日期 ({new_date.isoformat()})'}), 400
+            
+            # 检查节假日
+            if is_holiday(new_date):
                 return jsonify({
-                    'error': '班主任在该日期已有其他课程',
-                    'conflict_type': 'homeroom',
-                    'conflicts': [c.to_dict() for c in homeroom_conflicts]
-                }), 409
-            # check sunday (since sunday is part of same record, treat as same new_date)
-            sun = new_date + timedelta(days=1)
-            homeroom_conflicts2 = ClassSchedule.query.join(Class).filter(
-                Class.homeroom_id == class_obj.homeroom_id,
-                ClassSchedule.scheduled_date == new_date,
-                ClassSchedule.id != schedule_id
-            ).all()
-            # above query same as saturday because sunday is stored in same record; no extra check needed
-        
-        # 检查讲师冲突（如果已分配教-课组合，考虑两天）
-        # 讲师冲突检查：combo_id=周六讲师, combo_id_2=周日讲师，不同天应分别检查
-        if schedule.combo_id and schedule.combo:
-            teacher_id = schedule.combo.teacher_id
-            from models import TeacherCourseCombo
-            # 周六讲师只与其他记录的周六讲师(combo_id)比较
-            teacher_conflicts = ClassSchedule.query.join(
-                TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
-            ).filter(
-                TeacherCourseCombo.teacher_id == teacher_id,
-                ClassSchedule.scheduled_date == new_date,
-                ClassSchedule.id != schedule_id
-            ).all()
-
-            if teacher_conflicts:
-                return jsonify({
-                    'warning': f'讲师 {schedule.combo.teacher.name} 在该周六已有其他课程',
-                    'conflict_type': 'teacher',
-                    'conflicts': [c.to_dict() for c in teacher_conflicts],
-                    'proceed': True
+                    'warning': '该日期是节假日',
+                    'holiday': True,
+                    'proceed': False
                 }), 200
-        if schedule.combo_id_2 and schedule.combo_2:
-            teacher2_id = schedule.combo_2.teacher_id
-            from models import TeacherCourseCombo
-            # 周日讲师只与其他记录的周日讲师(combo_id_2)比较
-            teacher_conflicts2 = ClassSchedule.query.filter(
-                ClassSchedule.combo_id_2.isnot(None),
-                ClassSchedule.scheduled_date == new_date,
-                ClassSchedule.id != schedule_id
-            ).all()
-            teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == teacher2_id]
-            if teacher_conflicts2:
-                return jsonify({
-                    'warning': f'讲师 {schedule.combo_2.teacher.name} 在该周日已有其他课程',
-                    'conflict_type': 'teacher',
-                    'conflicts': [c.to_dict() for c in teacher_conflicts2],
-                    'proceed': True
-                }), 200
-        
-        # optional: 如果必要，还可检查新星期天是否是节假日
-        sun_date = new_date + timedelta(days=1)
-        if is_holiday(sun_date):
-            return jsonify({
-                'warning': '新周日日期为节假日',
-                'holiday': True,
-                'proceed': False
-            }), 200
-        
-        schedule.scheduled_date = new_date
-    
-    # 调整教-课组合（周六）
-    if 'combo_id' in data:
-        new_combo_id = data['combo_id']
-        # 检查新周六讲师是否有冲突（只与其他记录的周六讲师比较）
-        if new_combo_id:
-            from models import TeacherCourseCombo
-            new_combo = TeacherCourseCombo.query.get(new_combo_id)
-            if new_combo:
+            
+            # 检查班主任冲突 — 使用有效班主任（homeroom_override_id 优先于 Class.homeroom_id）
+            class_obj = schedule.class_
+            effective_hr_id = schedule.homeroom_override_id or (class_obj.homeroom_id if class_obj else None)
+            if effective_hr_id:
+                # 查找同日同班主任的其他课程
+                same_day_schedules = ClassSchedule.query.filter(
+                    ClassSchedule.scheduled_date == new_date,
+                    ClassSchedule.id != schedule_id
+                ).all()
+                homeroom_conflicts = []
+                for other_s in same_day_schedules:
+                    other_effective_hr = other_s.homeroom_override_id or (other_s.class_.homeroom_id if other_s.class_ else None)
+                    if other_effective_hr == effective_hr_id:
+                        homeroom_conflicts.append(other_s)
+                if homeroom_conflicts:
+                    return jsonify({
+                        'warning': '班主任在该日期已有其他课程',
+                        'conflict_type': 'homeroom',
+                        'conflicts': [c.to_dict() for c in homeroom_conflicts],
+                        'proceed': True
+                    }), 200
+            
+            # 检查讲师冲突（如果已分配教-课组合，考虑两天）
+            # 讲师冲突检查：combo_id=周六讲师, combo_id_2=周日讲师，不同天应分别检查
+            if schedule.combo_id and schedule.combo:
+                teacher_id = schedule.combo.teacher_id
+                # 周六讲师只与其他记录的周六讲师(combo_id)比较
                 teacher_conflicts = ClassSchedule.query.join(
                     TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
                 ).filter(
-                    TeacherCourseCombo.teacher_id == new_combo.teacher_id,
-                    ClassSchedule.scheduled_date == schedule.scheduled_date,
+                    TeacherCourseCombo.teacher_id == teacher_id,
+                    ClassSchedule.scheduled_date == new_date,
                     ClassSchedule.id != schedule_id
                 ).all()
-                
+
                 if teacher_conflicts:
                     return jsonify({
-                        'warning': f'讲师 {new_combo.teacher.name} 在该周六已有其他课程',
+                        'warning': f'讲师 {schedule.combo.teacher.name} 在该周六已有其他课程',
                         'conflict_type': 'teacher',
                         'conflicts': [c.to_dict() for c in teacher_conflicts],
                         'proceed': True
                     }), 200
-        
-        schedule.combo_id = new_combo_id
-    # 调整教-课组合（周日）
-    if 'combo_id_2' in data:
-        new_combo2_id = data['combo_id_2']
-        # 检查新周日讲师是否有冲突（只与其他记录的周日讲师比较）
-        if new_combo2_id:
-            from models import TeacherCourseCombo
-            new_combo2 = TeacherCourseCombo.query.get(new_combo2_id)
-            if new_combo2:
+            if schedule.combo_id_2 and schedule.combo_2:
+                teacher2_id = schedule.combo_2.teacher_id
+                # 周日讲师只与其他记录的周日讲师(combo_id_2)比较
                 teacher_conflicts2 = ClassSchedule.query.filter(
                     ClassSchedule.combo_id_2.isnot(None),
-                    ClassSchedule.scheduled_date == schedule.scheduled_date,
+                    ClassSchedule.scheduled_date == new_date,
                     ClassSchedule.id != schedule_id
                 ).all()
-                teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == new_combo2.teacher_id]
+                teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == teacher2_id]
                 if teacher_conflicts2:
                     return jsonify({
-                        'warning': f'讲师 {new_combo2.teacher.name} 在该周日已有其他课程',
+                        'warning': f'讲师 {schedule.combo_2.teacher.name} 在该周日已有其他课程',
                         'conflict_type': 'teacher',
                         'conflicts': [c.to_dict() for c in teacher_conflicts2],
                         'proceed': True
                     }), 200
-        schedule.combo_id_2 = new_combo2_id
+            
+            # optional: 如果必要，还可检查新星期天是否是节假日
+            sun_date = new_date + timedelta(days=1)
+            if is_holiday(sun_date):
+                return jsonify({
+                    'warning': '新周日日期为节假日',
+                    'holiday': True,
+                    'proceed': False
+                }), 200
+            
+            schedule.scheduled_date = new_date
+        
+        # 调整教-课组合（周六）
+        if 'combo_id' in data:
+            new_combo_id = data['combo_id']
+            # 检查新周六讲师是否有冲突（只与其他记录的周六讲师比较）
+            if new_combo_id:
+                new_combo = TeacherCourseCombo.query.get(new_combo_id)
+                if new_combo:
+                    teacher_conflicts = ClassSchedule.query.join(
+                        TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
+                    ).filter(
+                        TeacherCourseCombo.teacher_id == new_combo.teacher_id,
+                        ClassSchedule.scheduled_date == schedule.scheduled_date,
+                        ClassSchedule.id != schedule_id
+                    ).all()
+                    
+                    if teacher_conflicts:
+                        return jsonify({
+                            'warning': f'讲师 {new_combo.teacher.name} 在该周六已有其他课程',
+                            'conflict_type': 'teacher',
+                            'conflicts': [c.to_dict() for c in teacher_conflicts],
+                            'proceed': True
+                        }), 200
+            
+            schedule.combo_id = new_combo_id
+        # 调整教-课组合（周日）
+        if 'combo_id_2' in data:
+            new_combo2_id = data['combo_id_2']
+            # 检查新周日讲师是否有冲突（只与其他记录的周日讲师比较）
+            if new_combo2_id:
+                new_combo2 = TeacherCourseCombo.query.get(new_combo2_id)
+                if new_combo2:
+                    teacher_conflicts2 = ClassSchedule.query.filter(
+                        ClassSchedule.combo_id_2.isnot(None),
+                        ClassSchedule.scheduled_date == schedule.scheduled_date,
+                        ClassSchedule.id != schedule_id
+                    ).all()
+                    teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == new_combo2.teacher_id]
+                    if teacher_conflicts2:
+                        return jsonify({
+                            'warning': f'讲师 {new_combo2.teacher.name} 在该周日已有其他课程',
+                            'conflict_type': 'teacher',
+                            'conflicts': [c.to_dict() for c in teacher_conflicts2],
+                            'proceed': True
+                        }), 200
+            schedule.combo_id_2 = new_combo2_id
+        
+        # 调整班主任
+        if 'homeroom_override_id' in data:
+            new_hr_id = data['homeroom_override_id']
+            if new_hr_id:
+                schedule.homeroom_override_id = int(new_hr_id)
+            else:
+                schedule.homeroom_override_id = None
+        
+        # 更新备注
+        if 'notes' in data:
+            schedule.notes = data['notes']
     
-    # 更新备注
-    if 'notes' in data:
-        schedule.notes = data['notes']
-    
-    # 成功调整后，清除冲突标记（如果之前是冲突状态）
-    if schedule.status == 'conflict':
-        schedule.status = 'scheduled'
-        schedule.conflict_type = None
-        if schedule.notes and ('撞课' in schedule.notes or '手动' in schedule.notes or '冲突' in schedule.notes):
-            schedule.notes = None
-    
+    # ── 保存后：对同日所有课程重新检测冲突 ──
+    db.session.flush()
+
+    dates_to_check = {schedule.scheduled_date}
+    if 'date' in data and data['date']:
+        old_date_str = data.get('_old_date')
+        if old_date_str:
+            dates_to_check.add(date.fromisoformat(old_date_str))
+
+    _recheck_conflicts_for_dates(dates_to_check)
     db.session.commit()
+    
+    # 日期变动后重排课题序号
+    _resequence_topics_by_date(schedule.class_id)
+    
     return jsonify(schedule.to_dict())
 
 
@@ -543,6 +673,10 @@ def move_to_week():
     # 确保是周六
     new_date = find_next_available_saturday(new_date - timedelta(days=1))
     
+    # 禁止移到已过去的日期
+    if new_date < date.today():
+        return jsonify({'error': f'不能将课程移到已过去的日期 ({new_date.isoformat()})'}), 400
+    
     # 检查目标日期的冲突
     warnings = []
     
@@ -550,15 +684,18 @@ def move_to_week():
     if is_holiday(new_date):
         warnings.append(f'{new_date.isoformat()} 为节假日')
     
-    # 检查班主任冲突
-    if schedule.class_ and schedule.class_.homeroom_id:
-        homeroom_conflict = ClassSchedule.query.join(Class).filter(
-            Class.homeroom_id == schedule.class_.homeroom_id,
+    # 检查班主任冲突 — 使用有效班主任（homeroom_override_id 优先）
+    effective_hr_id = schedule.homeroom_override_id or (schedule.class_.homeroom_id if schedule.class_ else None)
+    if effective_hr_id:
+        same_day_others = ClassSchedule.query.filter(
             ClassSchedule.scheduled_date == new_date,
             ClassSchedule.class_id != schedule.class_id
-        ).first()
-        if homeroom_conflict:
-            warnings.append(f'班主任与 {homeroom_conflict.class_.name} 撞课')
+        ).all()
+        for other_s in same_day_others:
+            other_hr = other_s.homeroom_override_id or (other_s.class_.homeroom_id if other_s.class_ else None)
+            if other_hr == effective_hr_id:
+                warnings.append(f'班主任与 {other_s.class_.name if other_s.class_ else "?"} 撞课')
+                break
     
     # 检查讲师冲突（周六）
     if schedule.combo:
@@ -593,18 +730,11 @@ def move_to_week():
             'message': '移动目标日期存在以下问题，是否仍要移动？'
         })
     
+    old_date = schedule.scheduled_date
     schedule.scheduled_date = new_date
-    # 如果强制移动到有冲突的位置，更新状态
-    if warnings:
-        schedule.status = 'conflict'
-        schedule.conflict_type = 'teacher' if '讲师' in str(warnings) else 'homeroom'
-        schedule.notes = '手动移动: ' + '; '.join(warnings)
-    else:
-        # 无冲突移动，清除之前的冲突标记
-        if schedule.status == 'conflict':
-            schedule.status = 'scheduled'
-            schedule.conflict_type = None
-            schedule.notes = None
+    # 移动后由公共函数统一重检（旧日期 + 新日期），不再手动标记
+    db.session.flush()
+    _recheck_conflicts_for_dates({old_date, new_date})
     db.session.commit()
     
     return jsonify(schedule.to_dict())
@@ -618,7 +748,13 @@ def merge_info():
     data = request.get_json()
     schedule_ids = data.get('schedule_ids', [])
     
-    schedules = ClassSchedule.query.filter(ClassSchedule.id.in_(schedule_ids)).all()
+    schedules_unordered = ClassSchedule.query.filter(ClassSchedule.id.in_(schedule_ids)).all()
+    if len(schedules_unordered) < 2:
+        return jsonify({'error': '至少需要两条记录'}), 400
+    
+    # 按 schedule_ids 顺序排列，确保第一个 ID 对应主班
+    id_to_sch = {s.id: s for s in schedules_unordered}
+    schedules = [id_to_sch[sid] for sid in schedule_ids if sid in id_to_sch]
     if len(schedules) < 2:
         return jsonify({'error': '至少需要两条记录'}), 400
     
@@ -650,16 +786,18 @@ def merge_info():
                 'from_class': s.class_.name if s.class_ else ''
             })
     
-    # 收集可选班主任
+    # 收集可选班主任 — 使用有效班主任（override优先）
     homerooms = []
     seen_hr = set()
     for s in schedules:
-        if s.class_ and s.class_.homeroom and s.class_.homeroom_id not in seen_hr:
-            seen_hr.add(s.class_.homeroom_id)
+        effective_hr_id = s.homeroom_override_id or (s.class_.homeroom_id if s.class_ else None)
+        if effective_hr_id and effective_hr_id not in seen_hr:
+            seen_hr.add(effective_hr_id)
+            hr_obj = Homeroom.query.get(effective_hr_id)
             homerooms.append({
-                'homeroom_id': s.class_.homeroom_id,
-                'name': s.class_.homeroom.name,
-                'from_class': s.class_.name
+                'homeroom_id': effective_hr_id,
+                'name': hr_obj.name if hr_obj else '未知',
+                'from_class': s.class_.name if s.class_ else ''
             })
     
     return jsonify({
@@ -685,10 +823,14 @@ def merge_classes():
     if len(schedule_ids) < 2:
         return jsonify({'error': '合班至少需要两个课程'}), 400
     
-    schedules = ClassSchedule.query.filter(ClassSchedule.id.in_(schedule_ids)).all()
+    schedules_unordered = ClassSchedule.query.filter(ClassSchedule.id.in_(schedule_ids)).all()
     
-    if len(schedules) != len(schedule_ids):
+    if len(schedules_unordered) != len(schedule_ids):
         return jsonify({'error': '部分课程不存在'}), 404
+    
+    # 按 schedule_ids 顺序排列，确保第一个 ID 成为主记录
+    id_to_sch = {s.id: s for s in schedules_unordered}
+    schedules = [id_to_sch[sid] for sid in schedule_ids if sid in id_to_sch]
     
     # 验证是否为同一课题
     topic_ids = set(s.topic_id for s in schedules)
@@ -713,18 +855,28 @@ def merge_classes():
             'combo_id_2': s.combo_id_2,
             'status': s.status,
             'conflict_type': s.conflict_type,
-            'notes': s.notes
+            'notes': s.notes,
+            'homeroom_override_id': s.homeroom_override_id  # 保存合班前的班主任设置
         }
         s.merge_snapshot = json.dumps(snapshot, ensure_ascii=False)
+    
+    # 解析班主任名称为 ID
+    lead_homeroom_id = None
+    if lead_homeroom:
+        hr = Homeroom.query.filter_by(name=lead_homeroom).first()
+        if hr:
+            lead_homeroom_id = hr.id
     
     # 更新所有记录的统一信息
     for s in schedules:
         s.scheduled_date = unified_date
-        s.status = 'merged'
         if merged_combo_id:
             s.combo_id = int(merged_combo_id)
         if merged_combo_id_2:
             s.combo_id_2 = int(merged_combo_id_2)
+        # 合班班主任作为临时覆盖保存到每条记录
+        if lead_homeroom_id:
+            s.homeroom_override_id = lead_homeroom_id
     
     # 设置合班关联
     for s in schedules[1:]:
@@ -733,6 +885,37 @@ def merge_classes():
     
     main_schedule.notes = f'合班主记录（含 {", ".join(class_names[1:])}）' + (f'（带班: {lead_homeroom}）' if lead_homeroom else '')
     
+    # 合班后重检冲突（合班可能改变日期/班主任/讲师）
+    db.session.flush()
+    affected_dates = set(s.scheduled_date for s in schedules if s.scheduled_date)
+    _recheck_conflicts_for_dates(affected_dates)
+
+    # 自动持久化合班关系到 merge_config（重排时保留合班）
+    try:
+        mc_year = unified_date.year
+        mc_month = unified_date.month
+        plan = _get_or_create_plan(mc_year, mc_month)
+        topic_id = main_schedule.topic_id
+        primary_class_id = main_schedule.class_id
+        for s in schedules[1:]:
+            existing_mc = MergeConfig.query.filter_by(
+                monthly_plan_id=plan.id,
+                topic_id=topic_id,
+                merged_class_id=s.class_id
+            ).first()
+            if not existing_mc:
+                mc = MergeConfig(
+                    monthly_plan_id=plan.id,
+                    topic_id=topic_id,
+                    primary_class_id=primary_class_id,
+                    merged_class_id=s.class_id,
+                    combo_id=int(merged_combo_id) if merged_combo_id else None,
+                    combo_id_2=int(merged_combo_id_2) if merged_combo_id_2 else None
+                )
+                db.session.add(mc)
+    except Exception:
+        pass  # merge_config 写入失败不影响合班本身
+
     db.session.commit()
     
     return jsonify({
@@ -762,6 +945,8 @@ def unmerge_class(schedule_id):
             record.status = snap.get('status', 'scheduled')
             record.conflict_type = snap.get('conflict_type')
             record.notes = snap.get('notes')
+            # 恢复班主任设置（合班前的状态）
+            record.homeroom_override_id = snap.get('homeroom_override_id')
         except (json.JSONDecodeError, ValueError):
             pass
         record.merge_snapshot = None
@@ -777,17 +962,55 @@ def unmerge_class(schedule_id):
         main_record = ClassSchedule.query.get(schedule.merged_with)
         if main_record:
             # 检查主记录下还有没有其他次记录
-            remaining = ClassSchedule.query.filter(
+            remaining_records = ClassSchedule.query.filter(
                 ClassSchedule.merged_with == schedule.merged_with,
                 ClassSchedule.id != schedule_id
-            ).count()
-            if remaining == 0:
+            ).all()
+            if len(remaining_records) == 0:
                 # 没有其他次记录了，主记录也恢复
                 _restore_from_snapshot(main_record)
+            else:
+                # Bug 8 fix: 还有其他次记录时，更新主记录 notes 中的班级列表
+                remaining_names = [r.class_.name for r in remaining_records if r.class_]
+                if remaining_names:
+                    main_record.notes = f'合班主记录（含 {", ".join(remaining_names)}）'
     
     # 恢复当前记录
     _restore_from_snapshot(schedule)
     
+    # 拆分后重检冲突（日期可能恢复到不同的位置）
+    db.session.flush()
+    affected_dates = set()
+    affected_dates.add(schedule.scheduled_date)
+    for sec in secondary_records:
+        if sec.scheduled_date:
+            affected_dates.add(sec.scheduled_date)
+    if schedule.merged_with:
+        main_record = ClassSchedule.query.get(schedule.merged_with)
+        if main_record and main_record.scheduled_date:
+            affected_dates.add(main_record.scheduled_date)
+    _recheck_conflicts_for_dates(affected_dates)
+
+    # 清理 merge_config 中对应的合班关系
+    try:
+        topic_id = schedule.topic_id
+        if secondary_records:
+            # 拆的是主记录 → 删除该主班的所有 merge_config
+            for sec in secondary_records:
+                MergeConfig.query.filter_by(
+                    topic_id=topic_id,
+                    primary_class_id=schedule.class_id,
+                    merged_class_id=sec.class_id
+                ).delete()
+        else:
+            # 拆的是次记录 → 只删除这个并入班的 merge_config
+            MergeConfig.query.filter_by(
+                topic_id=topic_id,
+                merged_class_id=schedule.class_id
+            ).delete()
+    except Exception:
+        pass  # merge_config 清理失败不影响拆分本身
+
     db.session.commit()
     return jsonify({'message': '拆分成功，已恢复原始状态', 'schedule': schedule.to_dict()})
 
@@ -846,11 +1069,8 @@ def publish_month():
     # update month schedules
     start_date, end_date = _month_range(year, month)
 
-    ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date,
-        ClassSchedule.status.in_(['scheduled', 'planning', 'merged'])
-    ).update({'status': 'confirmed'}, synchronize_session=False)
+    # 状态简化：发布只改 MonthlyPlan.status，不再改 ClassSchedule.status
+    # ClassSchedule.status 保持 scheduled/completed 不变
 
     if force_publish and unresolved:
         for item in unresolved:
@@ -858,7 +1078,6 @@ def publish_month():
             schedule = ClassSchedule.query.get(sid)
             if schedule:
                 schedule.notes = f"{schedule.notes or ''}\n[强制发布备注] {force_note}".strip()
-                schedule.status = 'confirmed'
 
     db.session.commit()
 
@@ -888,13 +1107,8 @@ def unpublish_month():
     plan.published_at = None
     plan.updated_at = datetime.now()
 
-    # 将该月 confirmed 的课程回退为 scheduled
+    # 状态简化：取消发布只改 MonthlyPlan.status，不再改 ClassSchedule.status
     start_date, end_date = _month_range(year, month)
-    ClassSchedule.query.filter(
-        ClassSchedule.scheduled_date >= start_date,
-        ClassSchedule.scheduled_date < end_date,
-        ClassSchedule.status == 'confirmed'
-    ).update({'status': 'scheduled'}, synchronize_session=False)
 
     db.session.commit()
 
@@ -944,6 +1158,144 @@ def _get_or_create_plan(year, month):
         db.session.add(plan)
         db.session.flush()  # 获取 ID
     return plan
+
+
+def _load_db_constraints(year, month):
+    """从数据库加载当月所有启用的约束条件，转换为排课算法所需的 dict 格式"""
+    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        return {}
+    
+    db_constraints = ScheduleConstraint.query.filter_by(
+        monthly_plan_id=plan.id,
+        is_active=True
+    ).all()
+    
+    if not db_constraints:
+        return {}
+    
+    result = {
+        'blocked_dates': [],
+        'teacher_unavailable': [],
+        'homeroom_unavailable': []
+    }
+    
+    for c in db_constraints:
+        # 优先使用 parsed_data（AI 结构化解析的结果）
+        if c.parsed_data:
+            try:
+                parsed = _json.loads(c.parsed_data) if isinstance(c.parsed_data, str) else c.parsed_data
+                # parsed_data 可能直接就是约束的一部分
+                if isinstance(parsed, dict):
+                    for key in ['blocked_dates', 'teacher_unavailable', 'homeroom_unavailable']:
+                        if key in parsed and isinstance(parsed[key], list):
+                            result[key].extend(parsed[key])
+                continue
+            except (ValueError, TypeError):
+                pass
+        
+        # 没有 parsed_data 则根据 constraint_type 尝试从 description 推断
+        desc = c.description or ''
+        if c.constraint_type == 'blocked_date':
+            # 尝试从描述中提取日期
+            import re
+            date_matches = re.findall(r'(\d{4}-\d{2}-\d{2})', desc)
+            for d in date_matches:
+                result['blocked_dates'].append({'date': d, 'reason': desc})
+        elif c.constraint_type == 'teacher_unavailable':
+            import re
+            date_matches = re.findall(r'(\d{4}-\d{2}-\d{2})', desc)
+            if date_matches:
+                # 尝试提取讲师名（描述开头通常是讲师名）
+                name_match = re.match(r'^(.+?)[\s:：]', desc)
+                teacher_name = name_match.group(1) if name_match else desc.split()[0] if desc.split() else '未知'
+                result['teacher_unavailable'].append({
+                    'teacher_name': teacher_name,
+                    'dates': date_matches,
+                    'reason': desc
+                })
+        elif c.constraint_type == 'homeroom_unavailable':
+            import re
+            date_matches = re.findall(r'(\d{4}-\d{2}-\d{2})', desc)
+            if date_matches:
+                name_match = re.match(r'^(.+?)[\s:：]', desc)
+                hr_name = name_match.group(1) if name_match else desc.split()[0] if desc.split() else '未知'
+                result['homeroom_unavailable'].append({
+                    'homeroom_name': hr_name,
+                    'dates': date_matches,
+                    'reason': desc
+                })
+        # custom 类型无法自动解析，跳过
+    
+    return result
+
+
+def _merge_constraints(frontend_constraints, db_constraints):
+    """合并前端传入的约束和数据库加载的约束（去重）"""
+    merged = {
+        'blocked_dates': list(frontend_constraints.get('blocked_dates', [])),
+        'teacher_unavailable': list(frontend_constraints.get('teacher_unavailable', [])),
+        'homeroom_unavailable': list(frontend_constraints.get('homeroom_unavailable', []))
+    }
+    
+    # 去重合并 blocked_dates（按 date 字段去重）
+    existing_dates = {b.get('date') if isinstance(b, dict) else b for b in merged['blocked_dates']}
+    for b in db_constraints.get('blocked_dates', []):
+        d = b.get('date') if isinstance(b, dict) else b
+        if d not in existing_dates:
+            merged['blocked_dates'].append(b)
+            existing_dates.add(d)
+    
+    # 去重合并 teacher_unavailable（按 teacher_name 合并 dates）
+    teacher_map = {}
+    for t in merged['teacher_unavailable']:
+        name = t.get('teacher_name', '')
+        if name not in teacher_map:
+            teacher_map[name] = {'teacher_name': name, 'dates': list(t.get('dates', [])), 'reason': t.get('reason', '')}
+        else:
+            existing = set(teacher_map[name]['dates'])
+            for d in t.get('dates', []):
+                if d not in existing:
+                    teacher_map[name]['dates'].append(d)
+    for t in db_constraints.get('teacher_unavailable', []):
+        name = t.get('teacher_name', '')
+        if name not in teacher_map:
+            teacher_map[name] = {'teacher_name': name, 'dates': list(t.get('dates', [])), 'reason': t.get('reason', '')}
+        else:
+            existing = set(teacher_map[name]['dates'])
+            for d in t.get('dates', []):
+                if d not in existing:
+                    teacher_map[name]['dates'].append(d)
+    merged['teacher_unavailable'] = list(teacher_map.values())
+    
+    # 去重合并 homeroom_unavailable（按 homeroom_name 合并 dates）
+    hr_map = {}
+    for h in merged['homeroom_unavailable']:
+        name = h.get('homeroom_name', '')
+        if name not in hr_map:
+            hr_map[name] = {'homeroom_name': name, 'dates': list(h.get('dates', [])), 'reason': h.get('reason', '')}
+        else:
+            existing = set(hr_map[name]['dates'])
+            for d in h.get('dates', []):
+                if d not in existing:
+                    hr_map[name]['dates'].append(d)
+    for h in db_constraints.get('homeroom_unavailable', []):
+        name = h.get('homeroom_name', '')
+        if name not in hr_map:
+            hr_map[name] = {'homeroom_name': name, 'dates': list(h.get('dates', [])), 'reason': h.get('reason', '')}
+        else:
+            existing = set(hr_map[name]['dates'])
+            for d in h.get('dates', []):
+                if d not in existing:
+                    hr_map[name]['dates'].append(d)
+    merged['homeroom_unavailable'] = list(hr_map.values())
+    
+    # 保留前端约束中的其他字段（如 preferred_dates、merge_suggestions 等）
+    for key in frontend_constraints:
+        if key not in merged:
+            merged[key] = frontend_constraints[key]
+    
+    return merged
 
 
 @schedule_bp.route('/constraints', methods=['GET'])
@@ -1022,6 +1374,74 @@ def delete_constraint(constraint_id):
     return jsonify({'message': '约束已删除'})
 
 
+# ==================== 合班配置管理 ====================
+
+@schedule_bp.route('/merge-config', methods=['GET'])
+def get_merge_configs():
+    """获取指定月份的所有合班配置"""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+
+    if not year or not month:
+        return jsonify({'error': '缺少 year/month'}), 400
+
+    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        return jsonify([])
+
+    configs = MergeConfig.query.filter_by(monthly_plan_id=plan.id).all()
+    return jsonify([c.to_dict() for c in configs])
+
+
+@schedule_bp.route('/merge-config', methods=['POST'])
+def add_merge_config():
+    """添加合班配置"""
+    data = request.get_json()
+    year = data.get('year')
+    month = data.get('month')
+    topic_id = data.get('topic_id')
+    primary_class_id = data.get('primary_class_id')
+    merged_class_id = data.get('merged_class_id')
+
+    if not all([year, month, topic_id, primary_class_id, merged_class_id]):
+        return jsonify({'error': '缺少必要参数'}), 400
+
+    if primary_class_id == merged_class_id:
+        return jsonify({'error': '主班和并入班不能相同'}), 400
+
+    plan = _get_or_create_plan(year, month)
+
+    # 检查是否已存在
+    existing = MergeConfig.query.filter_by(
+        monthly_plan_id=plan.id,
+        topic_id=topic_id,
+        merged_class_id=merged_class_id
+    ).first()
+    if existing:
+        return jsonify({'error': '该合班关系已存在'}), 409
+
+    config = MergeConfig(
+        monthly_plan_id=plan.id,
+        topic_id=topic_id,
+        primary_class_id=primary_class_id,
+        merged_class_id=merged_class_id,
+        combo_id=data.get('combo_id'),
+        combo_id_2=data.get('combo_id_2')
+    )
+    db.session.add(config)
+    db.session.commit()
+
+    return jsonify(config.to_dict()), 201
+
+
+@schedule_bp.route('/merge-config/<int:config_id>', methods=['DELETE'])
+def delete_merge_config(config_id):
+    """删除合班配置"""
+    config = MergeConfig.query.get_or_404(config_id)
+    db.session.delete(config)
+    db.session.commit()
+    return jsonify({'message': '合班配置已删除'})
+
 
 
 @schedule_bp.route('/check-holiday', methods=['GET'])
@@ -1068,7 +1488,17 @@ def delete_schedule(schedule_id):
             ms.merge_snapshot = None
         ms.merged_with = None
     
+    # 记录被删记录的日期（删除前），以及恢复的合班次记录的日期
+    affected_dates = set()
+    if schedule.scheduled_date:
+        affected_dates.add(schedule.scheduled_date)
+    for ms in merged_schedules:
+        if ms.scheduled_date:
+            affected_dates.add(ms.scheduled_date)
+    
     db.session.delete(schedule)
+    db.session.flush()
+    _recheck_conflicts_for_dates(affected_dates)
     db.session.commit()
     
     return jsonify({'message': '课程已删除', 'id': schedule_id})
@@ -1083,20 +1513,46 @@ def get_schedule_detail(schedule_id):
 
 # ==================== Excel 导出 ====================
 
-def _status_cn(status, merged_with=None, notes=None):
-    """状态中文映射"""
-    if merged_with or (notes and '合班主记录' in (notes or '')):
-        return '合班'
+def _status_cn(status, merged_with=None, notes=None, schedules_map=None):
+    """状态中文映射
+    schedules_map: 可选的 {id: ClassSchedule} 映射，避免 N+1 查询
+    """
+    if merged_with:
+        # 次记录：查找主班名称
+        main_sch = None
+        if schedules_map and merged_with in schedules_map:
+            main_sch = schedules_map[merged_with]
+        else:
+            main_sch = ClassSchedule.query.get(merged_with)
+        if main_sch and main_sch.class_:
+            return f'已合班至{main_sch.class_.name}'
+        return '已合班'
+    if notes and '合班主记录' in (notes or ''):
+        # 主记录：提取合班班级名
+        import re
+        m = re.search(r'合班主记录（含\s*(.+?)）', notes or '')
+        if m:
+            return f'合班主记录（含{m.group(1)}）'
+        return '合班主记录'
     mapping = {
-        'scheduled': '已排课',
+        'scheduled': '✓',
         'completed': '已完成',
-        'confirmed': '已确认',
-        'conflict': '冲突',
-        'planning': '预排',
         'cancelled': '已取消',
-        'merged': '合班',
     }
     return mapping.get(status, status or '-')
+
+
+def _display_topic_name(schedule):
+    """获取拼接仪式前缀的课题显示名（开班仪式+X / 结课典礼+X）"""
+    topic_name = schedule.topic.name if schedule.topic else '-'
+    seq = schedule.topic.sequence if schedule.topic else None
+    total = schedule.class_.project.topics.count() if schedule.class_ and schedule.class_.project else 0
+    if seq and total > 0:
+        if seq == 1:
+            return f'开班仪式+{topic_name}'
+        elif seq == total:
+            return f'结课典礼+{topic_name}'
+    return topic_name
 
 
 def _apply_header_style(ws, header_row, col_count):
@@ -1118,20 +1574,26 @@ def _apply_header_style(ws, header_row, col_count):
 
 def _auto_width(ws, min_width=8, max_width=30):
     """根据内容自动调整列宽"""
+    from openpyxl.cell.cell import MergedCell
     for col in ws.columns:
-        # 跳过 MergedCell（合并单元格占位对象没有 column_letter）
-        first_cell = col[0]
-        if not hasattr(first_cell, 'column_letter'):
+        try:
+            first_cell = col[0]
+            # 跳过 MergedCell（合并单元格占位对象没有 column_letter）
+            if isinstance(first_cell, MergedCell):
+                continue
+            col_letter = first_cell.column_letter
+            lengths = []
+            for cell in col:
+                if isinstance(cell, MergedCell):
+                    continue
+                val = str(cell.value) if cell.value is not None else ''
+                # 中文字符按2倍宽度估算
+                char_len = sum(2 if ord(c) > 127 else 1 for c in val)
+                lengths.append(char_len)
+            best = max(lengths) if lengths else min_width
+            ws.column_dimensions[col_letter].width = max(min_width, min(best + 2, max_width))
+        except (AttributeError, TypeError):
             continue
-        col_letter = first_cell.column_letter
-        lengths = []
-        for cell in col:
-            val = str(cell.value) if cell.value is not None else ''
-            # 中文字符按2倍宽度估算
-            char_len = sum(2 if ord(c) > 127 else 1 for c in val)
-            lengths.append(char_len)
-        best = max(lengths) if lengths else min_width
-        ws.column_dimensions[col_letter].width = max(min_width, min(best + 2, max_width))
 
 
 @schedule_bp.route('/export/<int:year>/<int:month>', methods=['GET'])
@@ -1186,8 +1648,13 @@ def export_month_excel(year, month):
 
     conflict_font = Font(name='Microsoft YaHei', color='DC2626', bold=True)
     completed_fill = PatternFill(start_color='F0FDF4', end_color='F0FDF4', fill_type='solid')
+    merged_fill = PatternFill(start_color='FAF5FF', end_color='FAF5FF', fill_type='solid')
+    merged_font = Font(name='Microsoft YaHei', size=10, color='7C3AED')
     normal_font = Font(name='Microsoft YaHei', size=10)
     center_align = Alignment(horizontal='center', vertical='center')
+
+    # 预构建 ID→记录 映射，避免 _status_cn 中的 N+1 查询
+    schedules_map = {s.id: s for s in schedules}
 
     while curr_week_start < end_date:
         week_end = curr_week_start + timedelta(days=6)
@@ -1208,7 +1675,7 @@ def export_month_excel(year, month):
             day2_teacher = s.combo_2.teacher.name if s.combo_2 and s.combo_2.teacher else '待定'
             day2_course = s.combo_2.course.name if s.combo_2 and s.combo_2.course else '待定'
             homeroom = s.class_.homeroom.name if s.class_ and s.class_.homeroom else '未分配'
-            status = _status_cn(s.status, s.merged_with, s.notes)
+            status = _status_cn(s.status, s.merged_with, s.notes, schedules_map=schedules_map)
 
             # 使用实际排课日期而非计算的周六
             actual_sat = s.scheduled_date
@@ -1219,7 +1686,7 @@ def export_month_excel(year, month):
                 actual_sat.strftime('%m/%d'),
                 actual_sun.strftime('%m/%d'),
                 s.class_.name if s.class_ else '-',
-                s.topic.name if s.topic else '-',
+                _display_topic_name(s),
                 day1_teacher,
                 day1_course,
                 day2_teacher,
@@ -1233,13 +1700,23 @@ def export_month_excel(year, month):
                 cell.font = normal_font
                 cell.alignment = center_align
 
-            # 冲突行红色高亮状态
-            if s.status == 'conflict':
+            # 有冲突时：状态列显示冲突原因 + 红色
+            if s.conflict_type:
+                conflict_desc = s.conflict_type
+                # 尝试从 notes 取更详细的冲突描述
+                if s.notes and '撞课' in s.notes:
+                    conflict_desc = s.notes
+                ws.cell(row=row, column=11, value=conflict_desc)
                 ws.cell(row=row, column=11).font = conflict_font
             # 已完成行浅绿底
-            if s.status in ('completed', 'confirmed'):
+            if s.status == 'completed':
                 for col_idx in range(1, len(headers) + 1):
                     ws.cell(row=row, column=col_idx).fill = completed_fill
+            # 合班次记录行紫色底
+            if s.merged_with:
+                for col_idx in range(1, len(headers) + 1):
+                    ws.cell(row=row, column=col_idx).fill = merged_fill
+                    ws.cell(row=row, column=col_idx).font = merged_font
 
             row += 1
 
@@ -1318,7 +1795,7 @@ def export_class_excel(class_id):
             idx,
             sat.strftime('%Y-%m-%d') if sat else '-',
             sun.strftime('%Y-%m-%d') if sun else '-',
-            s.topic.name if s.topic else '-',
+            _display_topic_name(s),
             day1_teacher,
             day1_course,
             day2_teacher,
@@ -1331,7 +1808,7 @@ def export_class_excel(class_id):
             cell.alignment = center_align
 
         # 已完成行浅绿底
-        if s.status in ('completed', 'confirmed'):
+        if s.status == 'completed':
             for col_idx in range(1, len(headers) + 1):
                 ws.cell(row=row, column=col_idx).fill = completed_fill
 
@@ -1352,329 +1829,1886 @@ def export_class_excel(class_id):
     )
 
 
+# ==================== 智能排课算法核心函数 ====================
+from config import Config as _cfg
 
-@schedule_bp.route('/generate', methods=['POST'])
-def generate_schedule():
-    """根据约束条件生成/重新生成月度排课"""
+def _get_last_class_date(class_id, before_date=None):
+    """获取班级最后一次上课/排课的日期（跨所有月份，但只看 before_date 之前的记录）"""
+    query = ClassSchedule.query.filter(
+        ClassSchedule.class_id == class_id,
+        ClassSchedule.status.in_(['completed', 'scheduled'])
+    )
+    if before_date:
+        query = query.filter(ClassSchedule.scheduled_date < before_date)
+    last = query.order_by(ClassSchedule.scheduled_date.desc()).first()
+    return last.scheduled_date if last else None
+
+
+def _cleanup_stale_scheduled_records():
+    """清理全库中课题已完成但仍有scheduled的残留记录。
+    
+    场景：班级创建时 auto_schedule_class 一口气排了所有课题到未来多个月，
+    后来智能排课把某课题提前排在更早月份并完成了，但其他月份的旧 scheduled 记录残留。
+    
+    清理条件：同一 class_id + topic_id 既有 completed 又有 scheduled 记录时，
+    删除 scheduled 的那条（课已经上过了，旧计划没意义了）。
+    
+    安全性：不删除有合班关系（merged_with）的记录，避免破坏合班数据。
+    """
+    # 找出所有"班级+课题"已有 completed 记录的组合
+    completed_pairs = db.session.query(
+        ClassSchedule.class_id, ClassSchedule.topic_id
+    ).filter(
+        ClassSchedule.status == 'completed'
+    ).distinct().all()
+    
+    if not completed_pairs:
+        return 0
+    
+    # 构建集合用于快速查找
+    completed_set = set((cp.class_id, cp.topic_id) for cp in completed_pairs)
+    
+    # 找出匹配的 scheduled 残留记录（排除有合班关系的）
+    stale = ClassSchedule.query.filter(
+        ClassSchedule.status == 'scheduled',
+        ClassSchedule.merged_with.is_(None)
+    ).all()
+    
+    to_delete = []
+    for s in stale:
+        if (s.class_id, s.topic_id) in completed_set:
+            # 再检查：不删除有其他记录 merged_with 指向自己的（自己是合班主记录）
+            has_dependents = ClassSchedule.query.filter(
+                ClassSchedule.merged_with == s.id
+            ).first()
+            if not has_dependents:
+                to_delete.append(s)
+    
+    for s in to_delete:
+        db.session.delete(s)
+    
+    if to_delete:
+        db.session.commit()
+    
+    return len(to_delete)
+
+
+def _resequence_topics_by_date(class_id):
+    """按排课日期重排课题的 sequence，确保序号和时间顺序一致。
+    在任何修改了排课日期的操作后调用。
+    """
+    schedules = ClassSchedule.query.filter_by(class_id=class_id)\
+        .filter(ClassSchedule.scheduled_date.isnot(None))\
+        .order_by(ClassSchedule.scheduled_date).all()
+    seen_topics = []
+    for s in schedules:
+        if s.topic_id and s.topic_id not in seen_topics:
+            seen_topics.append(s.topic_id)
+    if seen_topics:
+        changed = False
+        for i, tid in enumerate(seen_topics):
+            topic = Topic.query.get(tid)
+            if topic and topic.sequence != i + 1:
+                topic.sequence = i + 1
+                changed = True
+        if changed:
+            db.session.commit()
+
+
+def _optimize_combos_per_day(assignments, constraints):
+    """阶段二：按天优化科教组合分配，消除讲师冲突。
+    
+    贪心算法逐个排课时，先排的班级不知道后排班级会冲突，
+    导致有些本可避免的讲师冲突留在了最终方案中。
+    
+    本函数在所有班级已经分配好日期后，对每一天的组合重新优化：
+    对同一天的所有班级，穷举所有可行的 (周六组合, 周日组合) 分配，
+    找到讲师冲突最少（理想为0）的方案。
+    
+    问题规模极小（每天最多7个班，每课题2-5个组合），穷举毫秒级。
+    """
+    from itertools import product as iter_product
+    
+    # 收集讲师请假约束
+    teacher_leave = set()  # {(teacher_id, date_str)}
+    leave_list = constraints.get('teacher_leave', [])
+    if isinstance(leave_list, list):
+        for item in leave_list:
+            if isinstance(item, dict):
+                tid = item.get('teacher_id')
+                for d in item.get('dates', []):
+                    teacher_leave.add((tid, d))
+    
+    # 预加载所有需要的组合数据（避免在循环中重复查DB）
+    topic_ids = set(a.get('topic_id') for a in assignments if a.get('topic_id'))
+    combos_by_topic = {}  # {topic_id: [combo1, combo2, ...]}
+    for tid in topic_ids:
+        combos_by_topic[tid] = TeacherCourseCombo.query.filter_by(topic_id=tid)\
+            .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
+    
+    # 建立 combo_id -> combo 对象的映射（用于冲突检查）
+    combo_cache = {}  # {combo_id: combo_obj}
+    for combos in combos_by_topic.values():
+        for c in combos:
+            combo_cache[c.id] = c
+    
+    # 按日期分组（只看有日期且非合班目标的记录）
+    by_date = {}
+    for i, a in enumerate(assignments):
+        d = a.get('assigned_date')
+        if d and not a.get('is_merged_target') and not a.get('skip_reason'):
+            by_date.setdefault(d, []).append(i)
+    
+    for date_str, indices in by_date.items():
+        if len(indices) <= 1:
+            continue  # 单个班级不可能有讲师冲突
+        
+        # 构建每个班级在这一天的可选组合对列表
+        slot_options = []  # [(assignment_index, [(combo1_obj, combo2_obj), ...], is_locked)]
+        
+        for idx in indices:
+            a = assignments[idx]
+            
+            # 用户手动锁定的组合不参与优化
+            if a.get('user_locked_combo') or a.get('is_override'):
+                c1 = combo_cache.get(a.get('combo_id'))
+                c2 = combo_cache.get(a.get('combo_id_2'))
+                slot_options.append((idx, [(c1, c2)], True))
+                continue
+            
+            # 获取该课题的所有可用组合（从缓存）
+            topic_id = a.get('topic_id')
+            all_combos = combos_by_topic.get(topic_id, [])
+            if not all_combos:
+                continue
+            
+            # 过滤掉讲师请假的组合
+            available = [c for c in all_combos 
+                        if not (c.teacher_id and (c.teacher_id, date_str) in teacher_leave)]
+            if not available:
+                available = all_combos
+            
+            # 生成所有 (周六, 周日) 组合对
+            pairs = []
+            for c1 in available:
+                for c2 in available:
+                    pairs.append((c1, c2))
+            
+            # 排序：优先不同讲师、高优先级
+            def pair_sort_key(p):
+                same_teacher = 1 if (p[0].teacher_id == p[1].teacher_id) else 0
+                priority = -(p[0].priority + p[1].priority)
+                return (same_teacher, priority)
+            pairs.sort(key=pair_sort_key)
+            
+            slot_options.append((idx, pairs, False))
+        
+        if len(slot_options) < 2:
+            continue
+        
+        # 检查当前方案是否已经无冲突
+        current_conflict_count = _count_teacher_conflicts_for_day(
+            slot_options, assignments, combo_cache
+        )
+        if current_conflict_count == 0:
+            continue  # 已经没冲突了，跳过
+        
+        # 穷举搜索：找讲师冲突为0的方案
+        all_pair_lists = [so[1] for so in slot_options]
+        
+        # 限制搜索空间（安全阈值）
+        total = 1
+        for pl in all_pair_lists:
+            total *= len(pl)
+            if total > 50000:
+                all_pair_lists = [pl[:5] for pl in all_pair_lists]
+                break
+        
+        best_assignment = None
+        best_conflict_count = float('inf')
+        
+        for combo_tuple in iter_product(*all_pair_lists):
+            sat_teachers = {}
+            sun_teachers = {}
+            conflicts = 0
+            
+            for i, (c1, c2) in enumerate(combo_tuple):
+                if c1 and c1.teacher_id:
+                    if c1.teacher_id in sat_teachers:
+                        conflicts += 1
+                    sat_teachers[c1.teacher_id] = slot_options[i][0]
+                
+                if c2 and c2.teacher_id:
+                    if c2.teacher_id in sun_teachers:
+                        conflicts += 1
+                    sun_teachers[c2.teacher_id] = slot_options[i][0]
+            
+            if conflicts < best_conflict_count:
+                best_conflict_count = conflicts
+                best_assignment = combo_tuple
+                if conflicts == 0:
+                    break
+        
+        # 应用最优方案
+        if best_assignment and best_conflict_count < current_conflict_count:
+            for i, (c1, c2) in enumerate(best_assignment):
+                idx = slot_options[i][0]
+                is_locked = slot_options[i][2]
+                if is_locked:
+                    continue
+                
+                a = assignments[idx]
+                old_c1_id = a.get('combo_id')
+                old_c2_id = a.get('combo_id_2')
+                new_c1_id = c1.id if c1 else None
+                new_c2_id = c2.id if c2 else None
+                
+                if new_c1_id != old_c1_id or new_c2_id != old_c2_id:
+                    # 先记录原始信息再覆盖
+                    orig_t1 = a.get('combo1_teacher_name', '?')
+                    orig_t2 = a.get('combo2_teacher_name', '?')
+                    a['combo_id'] = new_c1_id
+                    a['combo_id_2'] = new_c2_id
+                    a['combo1_teacher_name'] = c1.teacher.name if c1 and c1.teacher else None
+                    a['combo2_teacher_name'] = c2.teacher.name if c2 and c2.teacher else None
+                    a['combo1_course_name'] = c1.course.name if c1 and c1.course else None
+                    a['combo2_course_name'] = c2.course.name if c2 and c2.course else None
+                    a['combo_switched'] = True
+                    a['combo_switch_info'] = {
+                        'original_combo1_teacher': orig_t1,
+                        'original_combo2_teacher': orig_t2,
+                        'reason': 'phase2_optimization'
+                    }
+                
+                # 清除旧冲突标记中的讲师冲突（保留班主任等其他冲突）
+                if best_conflict_count == 0:
+                    old_conflicts = a.get('conflicts', [])
+                    a['conflicts'] = [c for c in old_conflicts if '讲师' not in c]
+                    if not a['conflicts']:
+                        a['conflict_type'] = None
+
+
+def _count_teacher_conflicts_for_day(slot_options, assignments, combo_cache):
+    """统计一天内当前组合分配的讲师冲突数（使用缓存避免DB查询）"""
+    sat_teachers = {}
+    sun_teachers = {}
+    conflicts = 0
+    
+    for so in slot_options:
+        idx = so[0]
+        a = assignments[idx]
+        c1_id = a.get('combo_id')
+        c2_id = a.get('combo_id_2')
+        
+        if c1_id:
+            c1 = combo_cache.get(c1_id)
+            if c1 and c1.teacher_id:
+                if c1.teacher_id in sat_teachers:
+                    conflicts += 1
+                sat_teachers[c1.teacher_id] = idx
+        
+        if c2_id:
+            c2 = combo_cache.get(c2_id)
+            if c2 and c2.teacher_id:
+                if c2.teacher_id in sun_teachers:
+                    conflicts += 1
+                sun_teachers[c2.teacher_id] = idx
+    
+    return conflicts
+
+
+def _calculate_urgency(class_id, reference_date):
+    """
+    计算班级排课紧迫度。
+    返回: (urgency_score, last_date)
+    - urgency > 1.0 → 超过目标间隔，越大越急
+    - urgency = 999  → 新班级从未排过课
+    """
+    last_date = _get_last_class_date(class_id, before_date=reference_date)
+    if last_date is None:
+        return 999.0, None
+    days_since = (reference_date - last_date).days
+    if days_since <= 0:
+        return 0.01, last_date
+    urgency = days_since / _cfg.TARGET_INTERVAL_DAYS
+    return urgency, last_date
+
+
+def _is_blocked(check_date, constraints):
+    """检查日期是否在封锁日期列表中"""
+    blocked = constraints.get('blocked_dates', [])
+    for b in blocked:
+        b_date = b.get('date') if isinstance(b, dict) else b
+        if b_date == check_date.isoformat():
+            return True
+    return False
+
+
+def _check_homeroom_unavailable(cls, sat, constraints):
+    """检查班主任是否在上课日（周六/周日）有请假/不可用"""
+    if not cls.homeroom_id or not cls.homeroom:
+        return None
+    homeroom_unavailable = constraints.get('homeroom_unavailable', [])
+    hrm_name = cls.homeroom.name
+    sun = sat + timedelta(days=1)  # 周日
+    teaching_days = {sat, sun}  # 只匹配实际上课日
+
+    for u in homeroom_unavailable:
+        if u.get('homeroom_name') != hrm_name:
+            continue
+        dates_raw = u.get('dates', [])
+        parsed = []
+        for item in dates_raw:
+            if isinstance(item, str):
+                try:
+                    parsed.append(date.fromisoformat(item))
+                except Exception:
+                    if '~' in item:
+                        parts = item.split('~')
+                        try:
+                            d1 = date.fromisoformat(parts[0])
+                            d2 = date.fromisoformat(parts[1])
+                            d = d1
+                            while d <= d2:
+                                parsed.append(d)
+                                d = d + timedelta(days=1)
+                        except Exception:
+                            pass
+            elif isinstance(item, dict):
+                f = item.get('from') or item.get('start')
+                t = item.get('to') or item.get('end')
+                try:
+                    d1 = date.fromisoformat(f)
+                    d2 = date.fromisoformat(t)
+                    d = d1
+                    while d <= d2:
+                        parsed.append(d)
+                        d = d + timedelta(days=1)
+                except Exception:
+                    pass
+        for pd in parsed:
+            if pd in teaching_days:
+                day_label = '周六' if pd == sat else '周日'
+                return f'班主任 {hrm_name} {pd.isoformat()}({day_label})请假'
+    return None
+
+
+def _score_candidate(cls, sat, last_date, combo1, combo2, assigned_map, constraints, homeroom_overrides=None):
+    """
+    评伎某个候选周六对某班级的综合得分。
+    
+    参数:
+        cls: Class 对象
+        sat: 候选周六日期
+        last_date: 该班级上次上课日期（可为 None）
+        combo1: Day1(周六) 的 TeacherCourseCombo
+        combo2: Day2(周日) 的 TeacherCourseCombo
+        assigned_map: 本轮已分配记录 {class_id: {date, combo1_teacher_id, combo2_teacher_id}}
+        constraints: 前端传入的约束条件 dict
+        homeroom_overrides: {class_id: homeroom_id} 临时班主任覆盖
+    
+    返回: (score, is_hard_conflict, conflict_reasons, merge_suggestions)
+        score: 0.0 ~ 1.0
+        is_hard_conflict: bool
+        conflict_reasons: [str]
+        merge_suggestions: [{target_class_id, target_class_name, topic_name}]  合班建议
+    """
+    if homeroom_overrides is None:
+        homeroom_overrides = {}
+    conflict_reasons = []
+    merge_suggestions = []
+    sun = sat + timedelta(days=1)
+
+    # --- H2: 节假日（双重保险，候选池理论上已过滤）---
+    if is_holiday(sat) or is_holiday(sun):
+        return (0.0, True, ['节假日冲突'], [])
+
+    # --- H6: 封锁日期 ---
+    blocked = constraints.get('blocked_dates', [])
+    for b in blocked:
+        b_date = b.get('date') if isinstance(b, dict) else b
+        if b_date == sat.isoformat() or b_date == sun.isoformat():
+            reason = b.get('reason', '人工约束') if isinstance(b, dict) else '人工约束'
+            return (0.0, True, [f'封锁日期({reason})'], [])
+
+    # --- S1: 间隔硬下限（< MIN_INTERVAL_DAYS 直接拒绝）---
+    if last_date:
+        interval = (sat - last_date).days
+        if interval < _cfg.MIN_INTERVAL_DAYS:
+            return (0.0, True, [f'间隔过短({interval}天 < {_cfg.MIN_INTERVAL_DAYS}天)'], [])
+    
+    # --- H3: 班主任不能同日双班 ---
+    # 使用临时覆盖的 homeroom_id（如果有）
+    effective_homeroom_id = homeroom_overrides.get(cls.id, cls.homeroom_id)
+    homeroom_conflict = False
+    if effective_homeroom_id:
+        # 查数据库已有记录 — 需考虑 homeroom_override_id
+        same_day_records = ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date == sat,
+            ClassSchedule.class_id != cls.id
+        ).all()
+        for existing in same_day_records:
+            # 该记录的有效班主任：override优先，否则用class默认
+            existing_effective = homeroom_overrides.get(
+                existing.class_id,
+                existing.homeroom_override_id or (existing.class_.homeroom_id if existing.class_ else None)
+            )
+            if existing_effective == effective_homeroom_id:
+                homeroom_conflict = True
+                conflict_reasons.append(f'班主任撞课({existing.class_.name if existing.class_ else "?"})')
+                break
+
+        # 查本轮 assigned_map
+        for a_cls_id, a_info in assigned_map.items():
+            if a_info['date'] == sat and a_cls_id != cls.id:
+                a_cls = Class.query.get(a_cls_id)
+                a_effective = homeroom_overrides.get(a_cls_id, a_cls.homeroom_id if a_cls else None)
+                if a_effective == effective_homeroom_id:
+                    homeroom_conflict = True
+                    conflict_reasons.append(f'班主任撞课({a_cls.name})[本轮]')
+
+    # --- H7: 班主任请假（硬约束：直接跳过该日期） ---
+    if cls.homeroom_id and not homeroom_conflict:
+        hrm_reason = _check_homeroom_unavailable(cls, sat, constraints)
+        if hrm_reason:
+            conflict_reasons.append(hrm_reason)
+            return (0.0, True, conflict_reasons, [])
+
+    # --- H4: 讲师 Day1(周六) 不能撞课 ---
+    teacher_conflict = False
+    if combo1 and combo1.teacher:
+        t1_id = combo1.teacher_id
+        # 查数据库 — combo_id 维度
+        t1_db = ClassSchedule.query.join(
+            TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
+        ).filter(
+            TeacherCourseCombo.teacher_id == t1_id,
+            ClassSchedule.scheduled_date == sat,
+            ClassSchedule.class_id != cls.id
+        ).first()
+        if t1_db:
+            teacher_conflict = True
+            conflict_reasons.append(f'周六讲师 {combo1.teacher.name} 撞课({t1_db.class_.name})')
+        # 查本轮 assigned_map — combo1_teacher_id 维度
+        for a_cls_id, a_info in assigned_map.items():
+            if a_info['date'] == sat and a_cls_id != cls.id:
+                if a_info.get('combo1_teacher_id') == t1_id:
+                    a_cls = Class.query.get(a_cls_id)
+                    a_name = a_cls.name if a_cls else '?'
+                    teacher_conflict = True
+                    conflict_reasons.append(f'周六讲师 {combo1.teacher.name} 撞课({a_name})[本轮]')
+
+    # --- H5: 讲师 Day2(周日) 不能撞课 ---
+    if combo2 and combo2.teacher:
+        t2_id = combo2.teacher_id
+        # 查数据库 — combo_id_2 维度（同一 scheduled_date 的其他记录）
+        schedules_on_sat = ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date == sat,
+            ClassSchedule.class_id != cls.id
+        ).all()
+        for existing_s in schedules_on_sat:
+            if existing_s.combo_id_2:
+                c2 = TeacherCourseCombo.query.get(existing_s.combo_id_2)
+                if c2 and c2.teacher_id == t2_id:
+                    teacher_conflict = True
+                    conflict_reasons.append(f'周日讲师 {combo2.teacher.name} 撞课({existing_s.class_.name})')
+                    break
+        # 查本轮 assigned_map — combo2_teacher_id 维度
+        for a_cls_id, a_info in assigned_map.items():
+            if a_info['date'] == sat and a_cls_id != cls.id:
+                if a_info.get('combo2_teacher_id') == t2_id:
+                    a_cls = Class.query.get(a_cls_id)
+                    a_name = a_cls.name if a_cls else '?'
+                    teacher_conflict = True
+                    conflict_reasons.append(f'周日讲师 {combo2.teacher.name} 撞课({a_name})[本轮]')
+
+    # --- H8: 讲师请假 ---
+    unavailable = constraints.get('teacher_unavailable', [])
+    t1_name = combo1.teacher.name if combo1 and combo1.teacher else None
+    t2_name = combo2.teacher.name if combo2 and combo2.teacher else None
+    sat_str = sat.isoformat()
+    sun_str = sun.isoformat()
+    if t1_name:
+        for u in unavailable:
+            if u.get('teacher_name') == t1_name and sat_str in u.get('dates', []):
+                teacher_conflict = True
+                conflict_reasons.append(f'周六讲师 {t1_name} 请假')
+                break
+    if t2_name:
+        for u in unavailable:
+            if u.get('teacher_name') == t2_name and sun_str in u.get('dates', []):
+                teacher_conflict = True
+                conflict_reasons.append(f'周日讲师 {t2_name} 请假')
+                break
+
+    # --- S4: 教室容量 ---
+    # Bug 13 fix: 排除合班次记录（merged_with IS NOT NULL），合班共用教室不额外占位
+    db_count = ClassSchedule.query.filter(
+        ClassSchedule.scheduled_date == sat,
+        ClassSchedule.status.in_(['scheduled', 'completed']),
+        ClassSchedule.merged_with.is_(None)
+    ).count()
+    assigned_count = sum(1 for info in assigned_map.values() if info['date'] == sat)
+    total_on_sat = db_count + assigned_count
+
+    # 教室硬上限：超过最大教室数直接拒绝
+    from config import Config as _cfg_cls
+    max_rooms = getattr(_cfg_cls, 'MAX_CLASSES_PER_SATURDAY', 7)
+    if total_on_sat >= max_rooms:
+        return (0.0, True, [f'教室已满({total_on_sat}/{max_rooms})'], [])
+
+    # --- 合班建议：同课题检测（不依赖教室满不满） ---
+    if combo1:
+        current_topic_id = combo1.topic_id
+        # 查当天同课题的班级（DB中）
+        same_topic_on_sat = ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date == sat,
+            ClassSchedule.topic_id == current_topic_id,
+            ClassSchedule.class_id != cls.id,
+            ClassSchedule.status.in_(['scheduled'])
+        ).all()
+        for s in same_topic_on_sat:
+            merge_suggestions.append({
+                'target_schedule_id': s.id,
+                'target_class_id': s.class_id,
+                'target_class_name': s.class_.name if s.class_ else '未知',
+                'topic_name': s.topic.name if s.topic else '未知',
+            })
+        # 查本轮 assigned_map 中的同课题
+        for a_cls_id, a_info in assigned_map.items():
+            if a_info['date'] == sat and a_cls_id != cls.id:
+                if a_info.get('topic_id') == current_topic_id:
+                    a_cls = Class.query.get(a_cls_id)
+                    merge_suggestions.append({
+                        'target_class_id': a_cls_id,
+                        'target_class_name': a_cls.name if a_cls else '未知',
+                        'topic_name': combo1.topic.name if combo1.topic else '未知',
+                    })
+
+    if total_on_sat >= _cfg.MAX_CLASSES_PER_SATURDAY:
+        conflict_reasons.append(f'教室已满({total_on_sat}/{_cfg.MAX_CLASSES_PER_SATURDAY})')
+        # 教室满时：如果有合班建议，不完全拒绝（可以通过合班释放教室）
+        if not merge_suggestions:
+            return (0.0, True, conflict_reasons, [])
+        # 有合班建议时继续评分，但 conflict_score 设为 0
+
+    # --- 评分计算 ---
+
+    # S1: 间隔分
+    if last_date:
+        interval = (sat - last_date).days
+        interval_score = max(0.0, 1.0 - abs(interval - _cfg.TARGET_INTERVAL_DAYS) / _cfg.TARGET_INTERVAL_DAYS)
+    else:
+        interval_score = 1.0  # 新班级
+
+    # 冲突分
+    has_any_conflict = homeroom_conflict or teacher_conflict or len(conflict_reasons) > 0
+    conflict_score = 0.0 if has_any_conflict else 1.0
+
+    # 均衡分
+    balance_score = 1.0 / (1 + total_on_sat)
+
+    # 月份匹配分（如果候选跨月）
+    in_month_score = 1.0  # 默认都在目标月内
+
+    total = (
+        interval_score * _cfg.SCORE_INTERVAL_WEIGHT +
+        conflict_score * _cfg.SCORE_CONFLICT_WEIGHT +
+        balance_score * _cfg.SCORE_BALANCE_WEIGHT +
+        in_month_score * _cfg.SCORE_IN_MONTH_WEIGHT
+    )
+
+    return (total, has_any_conflict, conflict_reasons, merge_suggestions)
+
+
+def _find_best_combo_for_saturday(cls, sat, last_date, all_combos,
+                                   default_combo1, default_combo2,
+                                   assigned_map, constraints, homeroom_overrides,
+                                   user_locked=False):
+    """
+    对某个候选周六，尝试不同的科教组合以找到最佳方案。
+
+    策略:
+      1. 先用默认组合评分
+      2. 如果无冲突 → 直接返回（不浪费算力）
+      3. 如果有讲师冲突 → 尝试其他组合
+      4. 如果用户手动锁定了组合(user_locked) → 不尝试替换
+
+    当所有组合的 priority 相同时，不偏袒任何组合，完全由评分决定。
+
+    返回: (score, is_hard, reasons, merges, best_combo1, best_combo2, switched)
+        switched: bool, 是否自动切换了组合
+    """
+    # Phase 1: 用默认组合评分
+    score, is_hard, reasons, merges = _score_candidate(
+        cls, sat, last_date, default_combo1, default_combo2,
+        assigned_map, constraints, homeroom_overrides
+    )
+
+    best = {
+        'score': score, 'is_hard': is_hard, 'reasons': reasons,
+        'merges': merges, 'combo1': default_combo1, 'combo2': default_combo2,
+        'switched': False
+    }
+
+    # 如果无冲突或用户锁定了组合或只有1个组合，直接返回
+    if not is_hard or user_locked or len(all_combos) <= 1:
+        return (best['score'], best['is_hard'], best['reasons'], best['merges'],
+                best['combo1'], best['combo2'], best['switched'])
+
+    # Phase 2: 检查是否有讲师冲突（只有讲师冲突换组合才有意义）
+    has_teacher_conflict = any('讲师' in r for r in reasons)
+    if not has_teacher_conflict:
+        return (best['score'], best['is_hard'], best['reasons'], best['merges'],
+                best['combo1'], best['combo2'], best['switched'])
+
+    # Phase 3: 判断冲突在周六、周日还是两天
+    sat_teacher_conflict = any('周六讲师' in r for r in reasons)
+    sun_teacher_conflict = any('周日讲师' in r for r in reasons)
+
+    # 检查是否所有组合的 priority 相同（相同时不偏袒，全部尝试）
+    priorities = set(c.priority for c in all_combos)
+    all_same_priority = len(priorities) <= 1
+
+    # 构建候选组合对
+    tried = set()
+    if default_combo1 and default_combo2:
+        tried.add((default_combo1.id, default_combo2.id))
+
+    # combo1 候选：仅在周六有冲突或优先级全相同时尝试更换
+    combo1_candidates = all_combos if (sat_teacher_conflict or all_same_priority) else [default_combo1]
+    # combo2 候选：仅在周日有冲突或优先级全相同时尝试更换
+    try_swap_combo2 = sun_teacher_conflict or all_same_priority
+
+    for c1 in combo1_candidates:
+        if c1 is None:
+            continue
+        # 为该 combo1 选配 combo2
+        if try_swap_combo2:
+            c2_candidates = all_combos
+        else:
+            # combo2 不需替换，根据 c1 确定一个默认的 c2
+            c2 = c1  # 兜底
+            for c in all_combos:
+                if c.teacher_id != c1.teacher_id:
+                    c2 = c
+                    break
+            c2_candidates = [c2]
+
+        for c2 in c2_candidates:
+            if c2 is None:
+                continue
+            pair_key = (c1.id, c2.id)
+            if pair_key in tried:
+                continue
+            tried.add(pair_key)
+
+            # 周六周日尽量不同讲师（除非只有1个组合可选）
+            if c1.teacher_id == c2.teacher_id and len(all_combos) > 1:
+                continue
+
+            alt_score, alt_hard, alt_reasons, alt_merges = _score_candidate(
+                cls, sat, last_date, c1, c2,
+                assigned_map, constraints, homeroom_overrides
+            )
+
+            # 比较：无冲突 > 有冲突，同级别比分数
+            curr_hard = best['is_hard']
+            if (curr_hard and not alt_hard) or \
+               (curr_hard == alt_hard and alt_score > best['score']):
+                best = {
+                    'score': alt_score, 'is_hard': alt_hard,
+                    'reasons': alt_reasons, 'merges': alt_merges,
+                    'combo1': c1, 'combo2': c2, 'switched': True
+                }
+
+    return (best['score'], best['is_hard'], best['reasons'], best['merges'],
+            best['combo1'], best['combo2'], best['switched'])
+
+
+def _generate_suggestions(assignment, issue_type, all_assignments):
+    """为某个排课问题生成建议方案"""
+    suggestions = []
+    if issue_type == 'too_long':
+        suggestions.append(f"检查上月是否有空余档期可提前安排")
+        suggestions.append(f"如无法提前，建议与讲师沟通加课")
+    elif issue_type == 'conflict':
+        if '班主任' in str(assignment.get('conflicts', [])):
+            suggestions.append('调整到班主任可到场的周末')
+            suggestions.append('或临时更换班主任')
+        if '讲师' in str(assignment.get('conflicts', [])):
+            suggestions.append('为该班更换讲师')
+            suggestions.append('将该班移至讲师有空的周六')
+        if '教室' in str(assignment.get('conflicts', [])):
+            suggestions.append('建议与同课题班级合班上课')
+    elif issue_type == 'no_slot':
+        suggestions.append('建议手动安排到下月初')
+        suggestions.append('检查是否可以更换讲师腾出档期')
+    return suggestions
+
+
+def _build_quality_report(assignments):
+    """构建排课质量报告（多维度加权评分）"""
+    intervals = [a['interval_days'] for a in assignments if a.get('interval_days') is not None]
+
+    # 维度1: 间隔合理性 (60%)
+    if intervals:
+        interval_scores = [
+            max(0, 1.0 - abs(d - _cfg.TARGET_INTERVAL_DAYS) / _cfg.TARGET_INTERVAL_DAYS)
+            for d in intervals
+        ]
+        interval_avg = int(sum(interval_scores) / len(interval_scores) * 100)
+    else:
+        interval_avg = 100
+
+    # 维度2: 无冲突率 (30%) — 每个冲突扣15分
+    conflict_items_pre = [a for a in assignments if a.get('conflicts')]
+    conflict_free_score = max(0, 100 - len(conflict_items_pre) * 15)
+
+    # 维度3: 覆盖率 (10%) — 成功排课占比
+    total = len(assignments)
+    skipped_pre = [a for a in assignments if a.get('assigned_date') is None]
+    scheduled_count = total - len(skipped_pre)
+    coverage_score = int(scheduled_count / total * 100) if total else 100
+
+    overall_score = int(interval_avg * 0.6 + conflict_free_score * 0.3 + coverage_score * 0.1)
+
+    good = [a for a in assignments if a.get('interval_days') and _cfg.MIN_INTERVAL_DAYS <= a['interval_days'] <= _cfg.MAX_INTERVAL_DAYS]
+    long_ = [a for a in assignments if a.get('interval_days') and a['interval_days'] > _cfg.MAX_INTERVAL_DAYS]
+    short = [a for a in assignments if a.get('interval_days') and a['interval_days'] < _cfg.MIN_INTERVAL_DAYS]
+    conflict_items = [a for a in assignments if a.get('conflicts')]
+    skipped = [a for a in assignments if a.get('assigned_date') is None]
+
+    issues = []
+    for a in long_:
+        issues.append({
+            'class_name': a.get('class_name'),
+            'type': 'interval_too_long',
+            'severity': 'warning',
+            'detail': f"距上次课({a.get('last_date', '?')})已过{a['interval_days']}天，超出建议范围({_cfg.MAX_INTERVAL_DAYS}天)",
+            'suggestions': _generate_suggestions(a, 'too_long', assignments)
+        })
+    for a in conflict_items:
+        issues.append({
+            'class_name': a.get('class_name'),
+            'type': 'conflict',
+            'severity': 'error',
+            'detail': '；'.join(a['conflicts']),
+            'suggestions': _generate_suggestions(a, 'conflict', assignments)
+        })
+    for a in skipped:
+        issues.append({
+            'class_name': a.get('class_name'),
+            'type': 'no_slot',
+            'severity': 'critical',
+            'detail': a.get('skip_reason', '当月无可用档期'),
+            'suggestions': _generate_suggestions(a, 'no_slot', assignments)
+        })
+
+    return {
+        'overall_score': overall_score,
+        'summary': {
+            'total': len(assignments),
+            'scheduled': len(assignments) - len(skipped),
+            'good_interval': len(good),
+            'long_interval': len(long_),
+            'short_interval': len(short),
+            'conflicts': len(conflict_items),
+            'skipped': len(skipped),
+        },
+        'assignments': assignments,
+        'issues': issues,
+    }
+
+
+
+def _run_best_of_n(year, month, constraints, n_rounds=30, **kwargs):
+    """
+    多次随机贪心优化：跑 n_rounds 轮，每轮随机打乱班级排序，取得分最高的结果。
+    第1轮保持原始紧迫度排序，后续轮次随机打乱。
+    """
+    import random
+
+    best_result = None
+    best_score = -1
+
+    for i in range(n_rounds):
+        seed = None if i == 0 else random.randint(1, 999999)
+        assignments, quality = _run_scheduling_algorithm(
+            year, month, constraints, shuffle_seed=seed, **kwargs
+        )
+        score = quality.get('overall_score', 0) if quality else 0
+        if score > best_score:
+            best_score = score
+            best_result = (assignments, quality)
+
+    if best_result:
+        assignments, quality = best_result
+        # 阶段二：在最优结果上执行一次组合优化（消除讲师冲突）
+        _optimize_combos_per_day(assignments, constraints)
+        # 重算质量报告（优化后冲突可能减少了）
+        quality = _build_quality_report(assignments)
+        return assignments, quality
+    return [], _build_quality_report([])
+
+
+def _run_scheduling_algorithm(year, month, constraints, conflict_mode='smart', overrides=None, skip_class_ids=None, homeroom_overrides=None, combo_overrides=None, shuffle_seed=None):
+    """
+    核心排课算法（共享逻辑：preview 和 generate 都调此函数）。
+    
+    参数:
+        year, month: 目标月份
+        constraints: 约束条件 dict
+        conflict_mode: 'smart'(评分驱动) / 'postpone'(顺延) / 'mark'(标记冲突)
+        overrides: {class_id_str: new_date_str} 用户在预览中的手动日期调整
+        skip_class_ids: set of class IDs to skip (e.g. merged target classes)
+        homeroom_overrides: {class_id: homeroom_id} 班主任覆盖
+        combo_overrides: {class_id_str: {combo1: id, combo2: id}} 科教组合覆盖
+
+    返回: (assignments, quality_report)
+        assignments: 排课分配详情列表
+        quality_report: 质量报告 dict
+    """
+    if overrides is None:
+        overrides = {}
+    if skip_class_ids is None:
+        skip_class_ids = set()
+    if homeroom_overrides is None:
+        homeroom_overrides = {}
+    if combo_overrides is None:
+        combo_overrides = {}
+
+    # 自动加载数据库中当月的约束条件，与前端传入的约束合并
+    db_constraints = _load_db_constraints(year, month)
+    if db_constraints:
+        constraints = _merge_constraints(constraints, db_constraints)
+
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+
+    # 加载合班配置：构建 merge_groups {primary_class_id: [merged_class_id, ...]}
+    # 和 merged_class_set（所有被并入的班级ID集合）
+    merge_groups = {}  # {primary_class_id: [merged_class_id, ...]}
+    merged_class_set = set()  # 所有被并入的班级ID
+    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if plan:
+        merge_configs = MergeConfig.query.filter_by(monthly_plan_id=plan.id).all()
+        for mc in merge_configs:
+            merge_groups.setdefault(mc.primary_class_id, [])
+            if mc.merged_class_id not in merge_groups[mc.primary_class_id]:
+                merge_groups[mc.primary_class_id].append(mc.merged_class_id)
+            merged_class_set.add(mc.merged_class_id)
+
+    # Step 1: 构建候选日期池（不含上月日期，可延伸到下月第1周做弹性）
+    pool_start = start_date  # 不允许排到上个月
+    pool_end = end_date + timedelta(days=7)
+    candidate_saturdays = []
+    d = pool_start
+    while d.weekday() != 5:
+        d += timedelta(days=1)
+    while d < pool_end:
+        sun = d + timedelta(days=1)
+        if not is_holiday(d) and not is_holiday(sun):
+            if not _is_blocked(d, constraints) and not _is_blocked(sun, constraints):
+                candidate_saturdays.append(d)
+        d += timedelta(days=7)
+
+    if not candidate_saturdays:
+        return [], _build_quality_report([])
+
+    # Step 2: 获取活跃班级 + 计算紧迫度 + 排序
+    active_classes = Class.query.filter(Class.status.in_(['active', 'planning'])).all()
+    ref_date = candidate_saturdays[0]
+
+    class_infos = []
+    for cls in active_classes:
+        # 跳过被合班的 target 班级（前端传入的 skip_class_ids）
+        if cls.id in skip_class_ids:
+            continue
+        # 跳过已被合班并入的班级（从 merge_config 加载）
+        if cls.id in merged_class_set:
+            continue
+        urgency, last_date = _calculate_urgency(cls.id, ref_date)
+        class_infos.append({
+            'cls': cls,
+            'urgency': urgency,
+            'last_date': last_date,
+            'merged_ids': merge_groups.get(cls.id, [])  # 该班组的并入班列表
+        })
+
+    # 按紧迫度降序 — 最急的先排，获得最好的档期
+    class_infos.sort(key=lambda x: x['urgency'], reverse=True)
+
+    # 多轮随机贪心：如果指定了 shuffle_seed，随机打乱班级顺序
+    # 但超期班级（urgency > 1.5，即间隔超过目标的1.5倍≈45天）锁定在前面优先排
+    if shuffle_seed is not None:
+        import random
+        rng = random.Random(shuffle_seed)
+        urgent = [c for c in class_infos if c['urgency'] > 1.5]
+        normal = [c for c in class_infos if c['urgency'] <= 1.5]
+        rng.shuffle(normal)
+        class_infos = urgent + normal
+
+    # Step 3: 为每个班级评分选日期
+    assigned_map = {}  # {class_id: {date, combo1_teacher_id, combo2_teacher_id, topic_id}}
+    assignments = []
+
+
+    for info in class_infos:
+        cls = info['cls']
+        last_date = info['last_date']
+
+        # 确定下一个未上课题
+        all_topics = cls.project.topics.all()  # relationship 已定义 order_by=Topic.sequence
+        next_topic = None
+
+        # 确定下一个未上课题：
+        # - completed 的记录（任何月份）：真正上完的课
+        # - scheduled 的记录（仅当月之前）：之前月份已排好的课
+        # - 不看当月及之后的 scheduled（因为当月已被清除，之后的不应影响本月排课）
+        from sqlalchemy import or_
+        last_completed = ClassSchedule.query.filter(
+            ClassSchedule.class_id == cls.id,
+            or_(
+                ClassSchedule.status == 'completed',
+                db.and_(
+                    ClassSchedule.status == 'scheduled',
+                    ClassSchedule.scheduled_date < start_date
+                )
+            )
+        ).join(Topic).order_by(Topic.sequence.desc()).first()
+
+        if not last_completed:
+            if all_topics:
+                next_topic = all_topics[0]
+        else:
+            current_seq = last_completed.topic.sequence
+            for t in all_topics:
+                if t.sequence > current_seq:
+                    next_topic = t
+                    break
+
+        if not next_topic:
+            continue  # 已结课
+
+        # 选 combo（优先使用用户在预览中的覆盖）
+        cls_id_str = str(cls.id)
+        all_combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id)\
+            .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
+
+        # 如果课题没有任何科教组合且用户未手动指定 → 跳过该班级
+        user_co = combo_overrides.get(cls_id_str, {})
+        if not all_combos and not user_co.get('combo1'):
+            assignments.append({
+                'class_id': cls.id,
+                'class_name': cls.name,
+                'topic_id': next_topic.id,
+                'topic_name': next_topic.name,
+                'assigned_date': None,
+                'skip_reason': f'课题「{next_topic.name}」缺少科教组合，请先在课程录入页配置讲师和课程',
+                'urgency': info['urgency'],
+            })
+            continue
+
+        combo1 = None
+        combo2 = None
+        user_locked_combo = False  # 用户是否手动锁定了组合
+
+        # 用户在预览中调整的科教组合 — 优先使用（user_co 已在上方定义）
+        if user_co.get('combo1'):
+            combo1 = TeacherCourseCombo.query.get(user_co['combo1'])
+            user_locked_combo = True
+        if user_co.get('combo2'):
+            combo2 = TeacherCourseCombo.query.get(user_co['combo2'])
+            user_locked_combo = True
+
+        # 如果用户没调整，使用默认逻辑
+        if not combo1 and all_combos:
+            combo1 = all_combos[0]
+        if not combo2:
+            combo2 = combo1  # 默认兜底
+            if all_combos:
+                for c in all_combos:
+                    if combo1 and c.teacher_id != combo1.teacher_id:
+                        combo2 = c
+                        break
+
+        # 记录默认组合（用于标记是否发生了自动切换）
+        default_combo1 = combo1
+        default_combo2 = combo2
+
+        # 序列化可用组合供前端编辑
+        combos_list = [{'id': c.id, 'teacher_name': c.teacher.name if c.teacher else '?', 'course_name': c.course.name if c.course else '?'} for c in all_combos]
+
+        # 检查用户是否在预览中手动指定了日期
+        override_date = overrides.get(str(cls.id))
+        if override_date:
+            try:
+                forced_sat = date.fromisoformat(override_date)
+                interval_days = (forced_sat - last_date).days if last_date else None
+                assignments.append({
+                    'class_id': cls.id,
+                    'class_name': cls.name,
+                    'project_name': cls.project.name if cls.project else None,
+                    'topic_id': next_topic.id,
+                    'topic_name': next_topic.name,
+                    'display_topic_name': f'开班仪式+{next_topic.name}' if next_topic.sequence == 1 else (f'结课典礼+{next_topic.name}' if next_topic.sequence == len(all_topics) else next_topic.name),
+                    'combo_id': combo1.id if combo1 else None,
+                    'combo_id_2': combo2.id if combo2 else None,
+                    'combo1_teacher_name': combo1.teacher.name if combo1 and combo1.teacher else None,
+                    'combo2_teacher_name': combo2.teacher.name if combo2 and combo2.teacher else None,
+                    'combo1_course_name': combo1.course.name if combo1 and combo1.course else None,
+                    'combo2_course_name': combo2.course.name if combo2 and combo2.course else None,
+                    'assigned_date': forced_sat.isoformat(),
+                    'last_date': last_date.isoformat() if last_date else None,
+                    'interval_days': interval_days,
+                    'score': 0.8,
+                    'conflicts': [],
+                    'conflict_type': None,
+                    'merge_suggestions': [],
+                    'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
+                    'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                    'urgency': info['urgency'],
+                    'status': 'scheduled',
+                    'is_override': True,
+                    'is_overflow': forced_sat >= end_date,
+                    'available_combos': combos_list,
+                })
+                assigned_map[cls.id] = {
+                    'date': forced_sat,
+                    'combo1_teacher_id': combo1.teacher_id if combo1 else None,
+                    'combo2_teacher_id': combo2.teacher_id if combo2 else None,
+                    'topic_id': next_topic.id,
+                }
+                continue
+            except Exception:
+                pass  # 无效的 override date，按正常流程走
+
+        # 评分选日期（所有模式共用 _find_best_combo_for_saturday 来自动换组合）
+        best_sat = None
+        best_score = -1
+        best_conflicts = []
+        best_merge_suggestions = []
+        best_has_conflict = True
+        best_combo1 = combo1
+        best_combo2 = combo2
+        combo_switched = False
+
+        if conflict_mode == 'smart':
+            # 优先选无冲突的候选，只有全冲突时选冲突最少的
+            for sat in candidate_saturdays:
+                score, is_hard, reasons, merges, c1, c2, switched = _find_best_combo_for_saturday(
+                    cls, sat, last_date, all_combos, combo1, combo2,
+                    assigned_map, constraints, homeroom_overrides,
+                    user_locked=user_locked_combo
+                )
+                # 无冲突候选始终优于有冲突候选
+                if best_has_conflict and not is_hard:
+                    best_score = score
+                    best_sat = sat
+                    best_conflicts = []
+                    best_merge_suggestions = merges
+                    best_has_conflict = False
+                    best_combo1, best_combo2, combo_switched = c1, c2, switched
+                elif not best_has_conflict and is_hard:
+                    continue
+                elif score > best_score:
+                    best_score = score
+                    best_sat = sat
+                    best_conflicts = reasons if is_hard else []
+                    best_merge_suggestions = merges
+                    best_combo1, best_combo2, combo_switched = c1, c2, switched
+
+        elif conflict_mode == 'mark':
+            # 兼容旧逻辑：找第一个无冲突位置（带自动换组合）
+            for sat in candidate_saturdays:
+                score, is_hard, reasons, merges, c1, c2, switched = _find_best_combo_for_saturday(
+                    cls, sat, last_date, all_combos, combo1, combo2,
+                    assigned_map, constraints, homeroom_overrides,
+                    user_locked=user_locked_combo
+                )
+                if not is_hard:
+                    best_sat = sat
+                    best_score = score
+                    best_conflicts = []
+                    best_merge_suggestions = []
+                    best_combo1, best_combo2, combo_switched = c1, c2, switched
+                    break
+                elif best_sat is None:
+                    best_sat = sat
+                    best_score = score
+                    best_conflicts = reasons
+                    best_merge_suggestions = merges
+                    best_combo1, best_combo2, combo_switched = c1, c2, switched
+
+        else:  # postpone
+            for sat in candidate_saturdays:
+                score, is_hard, reasons, merges, c1, c2, switched = _find_best_combo_for_saturday(
+                    cls, sat, last_date, all_combos, combo1, combo2,
+                    assigned_map, constraints, homeroom_overrides,
+                    user_locked=user_locked_combo
+                )
+                if not is_hard:
+                    best_sat = sat
+                    best_score = score
+                    best_conflicts = []
+                    best_merge_suggestions = []
+                    best_combo1, best_combo2, combo_switched = c1, c2, switched
+                    break
+            # postpone 模式下如果全部有硬冲突，best_sat 保持 None
+
+        if best_sat:
+            interval_days = (best_sat - last_date).days if last_date else None
+            # 关键：用实际选中的组合写 assigned_map，确保后续班级检测到正确的讲师
+            assigned_map[cls.id] = {
+                'date': best_sat,
+                'combo1_teacher_id': best_combo1.teacher_id if best_combo1 else None,
+                'combo2_teacher_id': best_combo2.teacher_id if best_combo2 else None,
+                'topic_id': next_topic.id,
+            }
+            # status 只管生命周期，conflict_type 独立标记冲突
+            final_status = 'scheduled'
+            conflict_type_val = None
+            if best_conflicts:
+                conflict_text = '；'.join(best_conflicts)
+                if '班主任' in conflict_text:
+                    conflict_type_val = 'homeroom'
+                elif '讲师' in conflict_text:
+                    conflict_type_val = 'teacher'
+                elif '节假日' in conflict_text:
+                    conflict_type_val = 'holiday'
+                else:
+                    conflict_type_val = 'other'
+
+            # 构建自动换组合的标记信息
+            combo_switch_info = None
+            if combo_switched:
+                combo_switch_info = {
+                    'original_combo1_teacher': default_combo1.teacher.name if default_combo1 and default_combo1.teacher else None,
+                    'original_combo2_teacher': default_combo2.teacher.name if default_combo2 and default_combo2.teacher else None,
+                }
+
+            assignments.append({
+                'class_id': cls.id,
+                'class_name': cls.name,
+                'project_name': cls.project.name if cls.project else None,
+                'topic_id': next_topic.id,
+                'topic_name': next_topic.name,
+                'display_topic_name': f'开班仪式+{next_topic.name}' if next_topic.sequence == 1 else (f'结课典礼+{next_topic.name}' if next_topic.sequence == len(all_topics) else next_topic.name),
+                'combo_id': best_combo1.id if best_combo1 else None,
+                'combo_id_2': best_combo2.id if best_combo2 else None,
+                'combo1_teacher_name': best_combo1.teacher.name if best_combo1 and best_combo1.teacher else None,
+                'combo2_teacher_name': best_combo2.teacher.name if best_combo2 and best_combo2.teacher else None,
+                'combo1_course_name': best_combo1.course.name if best_combo1 and best_combo1.course else None,
+                'combo2_course_name': best_combo2.course.name if best_combo2 and best_combo2.course else None,
+                'assigned_date': best_sat.isoformat(),
+                'last_date': last_date.isoformat() if last_date else None,
+                'interval_days': interval_days,
+                'score': best_score,
+                'conflicts': best_conflicts,
+                'conflict_type': conflict_type_val,
+                'merge_suggestions': best_merge_suggestions,
+                'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
+                'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                'urgency': info['urgency'],
+                'status': final_status,
+                'is_overflow': best_sat >= end_date,
+                'available_combos': combos_list,
+                'combo_switched': combo_switched,
+                'combo_switch_info': combo_switch_info,
+            })
+        else:
+            assignments.append({
+                'class_id': cls.id,
+                'class_name': cls.name,
+                'project_name': cls.project.name if cls.project else None,
+                'topic_id': next_topic.id,
+                'topic_name': next_topic.name,
+                'display_topic_name': f'开班仪式+{next_topic.name}' if next_topic.sequence == 1 else (f'结课典礼+{next_topic.name}' if next_topic.sequence == len(all_topics) else next_topic.name),
+                'assigned_date': None,
+                'last_date': last_date.isoformat() if last_date else None,
+                'interval_days': None,
+                'score': 0,
+                'conflicts': [],
+                'conflict_type': None,
+                'merge_suggestions': [],
+                'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
+                'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                'urgency': info['urgency'],
+                'skip_reason': '所有候选日期均不可用',
+                'available_combos': combos_list,
+            })
+
+    # 阶段二在 _run_best_of_n 中执行（只跑一次，不在30轮循环里）
+    quality_report = _build_quality_report(assignments)
+    return assignments, quality_report
+
+
+@schedule_bp.route('/generate-preview', methods=['POST'])
+def generate_schedule_preview():
+    """预览排课结果（不入库），返回质量报告和排课分配详情"""
     data = request.get_json()
     year = data.get('year')
     month = data.get('month')
     constraints = data.get('constraints', {})
-    
+    conflict_mode = data.get('conflict_mode', 'smart')
+    merges = data.get('merges', [])
+    combo_overrides_raw = data.get('combo_overrides', {})  # Issue 3: 接收科教组合调整
+    raw_hr_overrides = data.get('homeroom_overrides', {})
+    # 键从字符串转整数
+    homeroom_overrides = {int(k): v for k, v in raw_hr_overrides.items()} if raw_hr_overrides else {}
+
     if not year or not month:
         return jsonify({'error': 'Missing year/month'}), 400
-        
+
+    # 发布保护：已发布的月度计划不允许重新排课
+    existing_plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if existing_plan and existing_plan.status == 'published':
+        return jsonify({'error': '本月计划已发布，请先取消发布再重新排课'}), 409
+
     try:
-        # 1. 清除该月所有【草稿】状态的排课 (status='scheduled')
-        # 已发布('confirmed')或已完成('completed')的不动
+        # 预览模式：先在 session 中删除该月草稿记录，运行算法，再 rollback
+        start_d = date(year, month, 1)
+        end_d = date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
+
+        # 删除该月草稿记录（session级别，不 commit）
+        ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date >= start_d,
+            ClassSchedule.scheduled_date < end_d,
+            ClassSchedule.status.in_(['scheduled'])
+        ).delete(synchronize_session='fetch')
+        db.session.flush()  # 让算法查询能看到删除后的状态
+
+        # 合班：收集被合并的 target 班级 ID，算法将跳过它们
+        merged_target_ids = set()
+        for m in merges:
+            merged_target_ids.add(m.get('target_class_id'))
+
+        assignments, quality_report = _run_best_of_n(
+            year, month, constraints, n_rounds=30,
+            conflict_mode=conflict_mode,
+            skip_class_ids=merged_target_ids,
+            homeroom_overrides=homeroom_overrides,
+            combo_overrides=combo_overrides_raw
+        )
+
+        # 为合班的 source 班级标注合班信息
+        for m in merges:
+            for a in assignments:
+                if a.get('class_id') == m.get('class_id'):
+                    a['is_merged'] = True
+                    a['merged_with_class_id'] = m.get('target_class_id')
+                    a['merged_with_class_name'] = m.get('target_class_name', '')
+                    # 使用用户选择的组合
+                    if m.get('combo_id'):
+                        a['combo_id'] = m['combo_id']
+                    if m.get('combo_id_2'):
+                        a['combo_id_2'] = m['combo_id_2']
+                    break
+
+        # 为被合并的 target 班级生成占位记录
+        for m in merges:
+            target_cls = Class.query.get(m.get('target_class_id'))
+            if target_cls:
+                source_a = next((a for a in assignments if a.get('class_id') == m.get('class_id')), None)
+                assignments.append({
+                    'class_id': m['target_class_id'],
+                    'class_name': target_cls.name,
+                    'project_name': target_cls.project.name if target_cls.project else None,
+                    'topic_name': source_a.get('topic_name', '') if source_a else '',
+                    'assigned_date': m.get('date') or (source_a.get('assigned_date') if source_a else None),
+                    'is_merged_target': True,
+                    'merged_into_class_id': m.get('class_id'),
+                    'merged_into_class_name': source_a.get('class_name', '') if source_a else '',
+                    'interval_days': None,
+                    'conflicts': [],
+                    'conflict_type': None,
+                    'skip_reason': None,
+                })
+
+        # Issue 5: 为每个 assignment 添加班主任可用性信息
+        all_hr = Homeroom.query.all()
+        for a in assignments:
+            if a.get('is_merged_target'):
+                continue
+            assigned_date_str = a.get('assigned_date')
+            if not assigned_date_str:
+                a['homeroom_availability'] = [{'id': h.id, 'name': h.name, 'busy': False, 'busy_class': None} for h in all_hr]
+                continue
+            a_date = date.fromisoformat(assigned_date_str)
+            # 查找当日所有已排班级的班主任
+            busy_homerooms = {}  # {homeroom_id: class_name}
+            # 从本轮算法结果中查
+            for other_a in assignments:
+                if other_a.get('class_id') == a.get('class_id') or other_a.get('is_merged_target'):
+                    continue
+                if other_a.get('assigned_date') == assigned_date_str:
+                    other_hr_id = other_a.get('homeroom_id')
+                    if other_hr_id:
+                        busy_homerooms[other_hr_id] = other_a.get('class_name', '?')
+            a['homeroom_availability'] = [
+                {
+                    'id': h.id,
+                    'name': h.name,
+                    'busy': h.id in busy_homerooms,
+                    'busy_class': busy_homerooms.get(h.id)
+                }
+                for h in all_hr
+            ]
+
+        # 重新构建质量报告（合班后少了冲突）
+        quality_report = _build_quality_report(
+            [a for a in assignments if not a.get('is_merged_target')]
+        )
+
+        # 回滚！预览不持久化任何更改
+        db.session.rollback()
+
+        # 获取候选周六 + 不可用日期及原因
+        all_saturdays = _get_all_saturdays_with_reasons(year, month, constraints)
+
+        return jsonify({
+            'success': True,
+            'preview': assignments,
+            'quality_report': quality_report,
+            'candidate_saturdays': [
+                sat.isoformat() for sat in _get_candidate_saturdays(year, month, constraints)
+            ],
+            'all_saturdays': all_saturdays,
+            'merges_applied': len(merges),
+            'config': {
+                'target_interval_days': _cfg.TARGET_INTERVAL_DAYS,
+            },
+        })
+    except Exception as e:
+        db.session.rollback()  # 确保预览异常时也回滚
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@schedule_bp.route('/evaluate-preview', methods=['POST'])
+def evaluate_preview():
+    """
+    轻量评估预览：不重新排课，只重新检测冲突和计算评分。
+    前端在调整日期/组合/班主任后调用此接口，避免完整重排。
+    """
+    data = request.get_json()
+    assignments_raw = data.get('assignments', [])
+    constraints = data.get('constraints', {})
+    raw_hr_overrides = data.get('homeroom_overrides', {})
+    combo_overrides_raw = data.get('combo_overrides', {})
+    merges = data.get('merges', [])
+    homeroom_overrides = {int(k): v for k, v in raw_hr_overrides.items()} if raw_hr_overrides else {}
+
+    # 自动加载数据库中当月的约束条件
+    all_dates_for_month = [a['assigned_date'] for a in assignments_raw if a.get('assigned_date')]
+    if all_dates_for_month:
+        first_date = date.fromisoformat(min(all_dates_for_month))
+        db_constraints = _load_db_constraints(first_date.year, first_date.month)
+        if db_constraints:
+            constraints = _merge_constraints(constraints, db_constraints)
+    if not assignments_raw:
+        return jsonify({'error': 'No assignments to evaluate'}), 400
+
+    try:
+        # 关键修复：和 generate-preview 一样，先在 session 中删除当月草稿记录再评估
+        # 否则 _score_candidate 查 DB 会把预览自身的记录当成冲突
+        # 收集所有涉及的日期来确定月份范围
+        all_dates = [a['assigned_date'] for a in assignments_raw if a.get('assigned_date')]
+        if all_dates:
+            min_date = date.fromisoformat(min(all_dates))
+            max_date = date.fromisoformat(max(all_dates))
+            # 删除范围覆盖所有涉及的月份
+            start_d = date(min_date.year, min_date.month, 1)
+            end_month = max_date.month + 1 if max_date.month < 12 else 1
+            end_year = max_date.year if max_date.month < 12 else max_date.year + 1
+            end_d = date(end_year, end_month, 1)
+
+            ClassSchedule.query.filter(
+                ClassSchedule.scheduled_date >= start_d,
+                ClassSchedule.scheduled_date < end_d,
+                ClassSchedule.status.in_(['scheduled'])
+            ).delete(synchronize_session='fetch')
+            db.session.flush()
+
+        # 构建 assigned_map 用于冲突检测（排除合班目标）
+        assigned_map = {}
+        for a in assignments_raw:
+            if a.get('is_merged_target'):
+                continue
+            if not a.get('assigned_date'):
+                continue
+            cls_id = a['class_id']
+            combo1_teacher_id = None
+            combo2_teacher_id = None
+            if a.get('combo_id'):
+                c1 = TeacherCourseCombo.query.get(a['combo_id'])
+                if c1:
+                    combo1_teacher_id = c1.teacher_id
+            if a.get('combo_id_2'):
+                c2 = TeacherCourseCombo.query.get(a['combo_id_2'])
+                if c2:
+                    combo2_teacher_id = c2.teacher_id
+            assigned_map[cls_id] = {
+                'date': date.fromisoformat(a['assigned_date']),
+                'combo1_teacher_id': combo1_teacher_id,
+                'combo2_teacher_id': combo2_teacher_id,
+                'topic_id': a.get('topic_id'),
+            }
+
+        # 收集合班 target IDs
+        merged_target_ids = set(m.get('target_class_id') for m in merges)
+
+        # 重新评估每个 assignment 的冲突
+        evaluated = []
+        all_hr = Homeroom.query.all()
+        for a in assignments_raw:
+            if a.get('is_merged_target'):
+                evaluated.append(a)
+                continue
+            if not a.get('assigned_date'):
+                evaluated.append(a)
+                continue
+
+            cls_id = a['class_id']
+            cls = Class.query.get(cls_id)
+            if not cls:
+                evaluated.append(a)
+                continue
+
+            sat = date.fromisoformat(a['assigned_date'])
+            last_date = date.fromisoformat(a['last_date']) if a.get('last_date') else None
+
+            # 获取 combo 对象
+            combo1 = TeacherCourseCombo.query.get(a['combo_id']) if a.get('combo_id') else None
+            combo2 = TeacherCourseCombo.query.get(a['combo_id_2']) if a.get('combo_id_2') else None
+
+            # 构建不含自身的 assigned_map
+            other_map = {k: v for k, v in assigned_map.items() if k != cls_id}
+
+            # 调用现有的评分函数
+            score, is_hard, conflict_reasons, merge_suggestions = _score_candidate(
+                cls, sat, last_date, combo1, combo2,
+                other_map, constraints, homeroom_overrides
+            )
+
+            # 更新 interval_days
+            interval_days = (sat - last_date).days if last_date else None
+
+            # 确定 conflict_type
+            conflict_type_val = None
+            if conflict_reasons:
+                conflict_text = '；'.join(conflict_reasons)
+                if '班主任' in conflict_text:
+                    conflict_type_val = 'homeroom'
+                elif '讲师' in conflict_text:
+                    conflict_type_val = 'teacher'
+                elif '节假日' in conflict_text:
+                    conflict_type_val = 'holiday'
+                else:
+                    conflict_type_val = 'other'
+
+            # 更新 homeroom 信息
+            effective_hr_id = homeroom_overrides.get(cls_id, cls.homeroom_id)
+            effective_hr = Homeroom.query.get(effective_hr_id) if effective_hr_id else None
+
+            a['conflicts'] = conflict_reasons
+            a['conflict_type'] = conflict_type_val
+            a['interval_days'] = interval_days
+            a['score'] = score
+            a['merge_suggestions'] = merge_suggestions
+            a['homeroom_name'] = effective_hr.name if effective_hr else (cls.homeroom.name if cls.homeroom else '未分配')
+            a['homeroom_id'] = effective_hr_id
+
+            # 班主任可用性
+            assigned_date_str = a['assigned_date']
+            busy_homerooms = {}
+            for other_a in assignments_raw:
+                if other_a.get('class_id') == cls_id or other_a.get('is_merged_target'):
+                    continue
+                if other_a.get('assigned_date') == assigned_date_str:
+                    other_hr_id = other_a.get('homeroom_id')
+                    if other_hr_id:
+                        busy_homerooms[other_hr_id] = other_a.get('class_name', '?')
+            a['homeroom_availability'] = [
+                {
+                    'id': h.id,
+                    'name': h.name,
+                    'busy': h.id in busy_homerooms,
+                    'busy_class': busy_homerooms.get(h.id)
+                }
+                for h in all_hr
+            ]
+
+            evaluated.append(a)
+
+        # 回滚！评估不持久化任何更改
+        db.session.rollback()
+
+        # 构建质量报告
+        non_merged = [a for a in evaluated if not a.get('is_merged_target')]
+        quality_report = _build_quality_report(non_merged)
+
+        return jsonify({
+            'success': True,
+            'preview': evaluated,
+            'quality_report': quality_report,
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+def _get_candidate_saturdays(year, month, constraints):
+    """获取候选周六列表（供前端预览调整时使用）"""
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    pool_start = start_date - timedelta(days=7)
+    pool_end = end_date + timedelta(days=7)
+    result = []
+    d = pool_start
+    while d.weekday() != 5:
+        d += timedelta(days=1)
+    while d < pool_end:
+        sun = d + timedelta(days=1)
+        if not is_holiday(d) and not is_holiday(sun):
+            if not _is_blocked(d, constraints) and not _is_blocked(sun, constraints):
+                result.append(d)
+        d += timedelta(days=7)
+    return result
+
+
+def _get_all_saturdays_with_reasons(year, month, constraints):
+    """获取月份范围内所有周六及其可用状态和原因，供前端显示"""
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    pool_start = start_date - timedelta(days=7)
+    pool_end = end_date + timedelta(days=7)
+
+    result = []
+    d = pool_start
+    while d.weekday() != 5:
+        d += timedelta(days=1)
+    while d < pool_end:
+        sun = d + timedelta(days=1)
+        item = {'date': d.isoformat(), 'sun_date': sun.isoformat(), 'available': True, 'reason': None}
+
+        if is_holiday(d):
+            item['available'] = False
+            item['reason'] = f'{d.strftime("%m/%d")}(六) 节假日'
+        elif is_holiday(sun):
+            item['available'] = False
+            item['reason'] = f'{sun.strftime("%m/%d")}(日) 节假日'
+        elif _is_blocked(d, constraints):
+            item['available'] = False
+            item['reason'] = '约束条件排除'
+        elif _is_blocked(sun, constraints):
+            item['available'] = False
+            item['reason'] = '约束条件排除(周日)'
+
+        result.append(item)
+        d += timedelta(days=7)
+    return result
+
+
+@schedule_bp.route('/generate', methods=['POST'])
+def generate_schedule():
+    """根据约束条件生成/重新生成月度排课（智能评分驱动）"""
+    data = request.get_json()
+    year = data.get('year')
+    month = data.get('month')
+    constraints = data.get('constraints', {})
+    conflict_mode = data.get('conflict_mode', 'smart')
+    overrides = data.get('overrides', {})
+    combo_overrides = data.get('combo_overrides', {})  # {class_id_str: {combo1: id, combo2: id}}
+    merges = data.get('merges', [])
+    raw_hr_overrides = data.get('homeroom_overrides', {})
+    homeroom_overrides = {int(k): v for k, v in raw_hr_overrides.items()} if raw_hr_overrides else {}
+
+    if not year or not month:
+        return jsonify({'error': 'Missing year/month'}), 400
+
+    # 发布保护：已发布的月度计划不允许重新排课
+    existing_plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if existing_plan and existing_plan.status == 'published':
+        return jsonify({'error': '本月计划已发布，请先取消发布再重新排课'}), 409
+
+    try:
+        # 1. 清除该月所有草稿状态的排课
         start_date = date(year, month, 1)
         if month == 12:
             end_date = date(year + 1, 1, 1)
         else:
             end_date = date(year, month + 1, 1)
-            
+
         # 先清除其他月份对即将删除记录的 merged_with 引用
         to_delete_ids = [s.id for s in ClassSchedule.query.filter(
             ClassSchedule.scheduled_date >= start_date,
             ClassSchedule.scheduled_date < end_date,
-            ClassSchedule.status.in_(['scheduled', 'planning', 'conflict'])
+            ClassSchedule.status.in_(['scheduled'])
         ).all()]
         if to_delete_ids:
+            # 清除指向即将删除记录的 merged_with 引用（跨月次记录）
             ClassSchedule.query.filter(
                 ClassSchedule.merged_with.in_(to_delete_ids)
             ).update({ClassSchedule.merged_with: None, ClassSchedule.merge_snapshot: None}, synchronize_session=False)
-        
+            
+            # Bug fix: 清除即将删除/重建的主记录上的合班残留（notes、merge_snapshot）
+            # 防止重建后主记录保留旧的合班notes而次记录已不存在
+            to_delete_set = set(to_delete_ids)
+            stale_mains = ClassSchedule.query.filter(
+                ClassSchedule.id.in_(to_delete_ids),
+                ClassSchedule.notes.like('%合班主记录%')
+            ).all()
+            for sm in stale_mains:
+                sm.notes = None
+                sm.merge_snapshot = None
+
         ClassSchedule.query.filter(
             ClassSchedule.scheduled_date >= start_date,
             ClassSchedule.scheduled_date < end_date,
-            ClassSchedule.status.in_(['scheduled', 'planning', 'conflict'])
+            ClassSchedule.status.in_(['scheduled'])
         ).delete()
-        
-        # 2. 获取所有活跃班级
-        # (简化逻辑：所有status='active'或'planning'的班级都尝试排一节课)
-        active_classes = Class.query.filter(Class.status.in_(['active', 'planning'])).all()
-        
+
+        db.session.flush()
+
+        # 2. 合班：收集被合并的 target 班级 ID
+        merged_target_ids = set()
+        for m in merges:
+            merged_target_ids.add(m.get('target_class_id'))
+
+        # 3. 运行核心排课算法
+        assignments, quality_report = _run_best_of_n(
+            year, month, constraints, n_rounds=30,
+            conflict_mode=conflict_mode,
+            overrides=overrides,
+            skip_class_ids=merged_target_ids,
+            homeroom_overrides=homeroom_overrides,
+            combo_overrides=combo_overrides
+        )
+
+        # 3. 将结果写入数据库
         generated_count = 0
-        
-        # 获取月度所有周六
-        saturdays = []
-        d = start_date
-        # 找到第一个周六
-        while d.weekday() != 5:
-            d += timedelta(days=1)
-        while d < end_date:
-            saturdays.append(d)
-            d += timedelta(days=7)
-            
-        # 3. 为每个班级排课
         skipped_classes_info = []
-        conflict_mode = data.get('conflict_mode', 'postpone') # 'postpone' (顺延) or 'mark' (标记冲突)
 
-        for cls in active_classes:
-            # 找到该班级下一个未上的课题
-            # 获取已排的最大sequence (仅查找本月之前的)
-            last_schedule = ClassSchedule.query.filter(
-                ClassSchedule.class_id == cls.id,
-                ClassSchedule.scheduled_date < start_date
-            ).order_by(ClassSchedule.scheduled_date.desc()).first()
-            
-            # 获取所有topic按sequence排序
-            # 获取该班级对应项目的所有课题
-            all_topics = cls.project.topics.order_by("sequence").all()
-            
-            next_topic = None
-            if not last_schedule:
-                # 还没上过课，第一节
-                if all_topics: 
-                    next_topic = all_topics[0]
-            else:
-                # 找下一节
-                current_seq = last_schedule.topic.sequence
-                for t in all_topics:
-                    if t.sequence > current_seq:
-                        next_topic = t
-                        break
-            
-            if not next_topic:
-                continue  # 该班级已结课
-                
-            # 找到合适的 Combo (Teacher) — 增强版：遍历所有combo，优先选不同讲师
-            all_combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id)\
-                .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
-            
-            combo1 = None
-            combo2 = None
-            teacher1_name = None
-            teacher2_name = None
-            
-            if all_combos:
-                combo1 = all_combos[0]  # 优先级最高的
-                # 周日：优先选不同讲师的combo
-                combo2 = combo1  # 默认兜底
-                for c in all_combos:
-                    if c.teacher_id != combo1.teacher_id:
-                        combo2 = c
-                        break
-                    
-            teacher1_name = combo1.teacher.name if combo1 and combo1.teacher else None
-            teacher2_name = combo2.teacher.name if combo2 and combo2.teacher else None
-            
-            # 4. 寻找合适的档期 (从可用周六中找)
-            assigned_date = None
-            fail_reason = "无可用档期"
-            final_status = 'scheduled'
-            final_notes = 'AI自动排课'
-            
-            for sat in saturdays:
-                sun = sat + timedelta(days=1)
-                sat_str = sat.isoformat()
-                sun_str = sun.isoformat()
-                
-                current_conflict_reason = None
-                
-                # A. 检查节假日 (2天都不能是节假日)
-                if is_holiday(sat) or is_holiday(sun):
-                    current_conflict_reason = "节假日冲突"
-                    
-                # B. 检查系统硬约束 (blocked_dates)
-                if not current_conflict_reason: 
-                    blocked = constraints.get('blocked_dates', [])
-                    for b in blocked:
-                        b_date = b.get('date') if isinstance(b, dict) else b
-                        if b_date == sat_str or b_date == sun_str:
-                            current_conflict_reason = f"日期被排除 ({b.get('reason', '人工约束')})" if isinstance(b, dict) else "日期被排除"
-                            break
-                    
-                # C. 检查班主任档期 (Inherent Check)
-                if not current_conflict_reason and cls.homeroom_id:
-                    # 查找该班主任在当天的其他排课（排除当前班级自身）
-                    homeroom_conflict = ClassSchedule.query.join(Class).filter(
-                        Class.homeroom_id == cls.homeroom_id,
-                        ClassSchedule.scheduled_date == sat,
-                        ClassSchedule.class_id != cls.id
-                    ).first()
-                    
-                    if homeroom_conflict:
-                        current_conflict_reason = f"周六: 班主任撞课 ({homeroom_conflict.class_.name})"
-
-                    # NEW: Check homeroom_unavailable constraint (AI Constraints)
-                    if not current_conflict_reason:
-                        homeroom_unavailable = constraints.get('homeroom_unavailable', [])
-                        if cls.homeroom: # Ensure homeroom loaded
-                            hrm_name = cls.homeroom.name
-                            # Determine week range for candidate Saturday (Mon..Sun)
-                            week_monday = sat - timedelta(days=5)
-                            week_sunday = week_monday + timedelta(days=6)
-
-                            for u in homeroom_unavailable:
-                                if u.get('homeroom_name') != hrm_name:
-                                    continue
-
-                                # u['dates'] may be a list of ISO dates or date ranges; handle common formats
-                                dates = u.get('dates', [])
-                                parsed = []
-                                for item in dates:
-                                    if isinstance(item, str):
-                                        # single date
-                                        try:
-                                            parsed.append(date.fromisoformat(item))
-                                        except Exception:
-                                            # try to parse ranges like '2026-04-13~2026-04-17'
-                                            if '~' in item:
-                                                parts = item.split('~')
-                                                try:
-                                                    d1 = date.fromisoformat(parts[0])
-                                                    d2 = date.fromisoformat(parts[1])
-                                                    # expand range (inclusive)
-                                                    d = d1
-                                                    while d <= d2:
-                                                        parsed.append(d)
-                                                        d = d + timedelta(days=1)
-                                                except Exception:
-                                                    pass
-                                    elif isinstance(item, dict):
-                                        # permissive: {from: 'YYYY-MM-DD', to: 'YYYY-MM-DD'}
-                                        f = item.get('from') or item.get('start')
-                                        t = item.get('to') or item.get('end')
-                                        try:
-                                            d1 = date.fromisoformat(f)
-                                            d2 = date.fromisoformat(t)
-                                            d = d1
-                                            while d <= d2:
-                                                parsed.append(d)
-                                                d = d + timedelta(days=1)
-                                        except Exception:
-                                            pass
-
-                                # If any parsed date falls within the candidate week, block this weekend
-                                for pd in parsed:
-                                    if week_monday <= pd <= week_sunday:
-                                        current_conflict_reason = f"周末: 班主任 {hrm_name} 在同一周请假/不可用"
-                                        break
-                                if current_conflict_reason:
-                                    break
-
-                # D. 检查讲师档期 (分别检查Day1和Day2)
-                unavailable = constraints.get('teacher_unavailable', [])
-                
-                # Day 1 Teacher Check
-                if not current_conflict_reason and teacher1_name:
-                    for u in unavailable:
-                        if u['teacher_name'] == teacher1_name and sat_str in u['dates']:
-                            current_conflict_reason = f"周六: 讲师 {teacher1_name} 请假"
-                            break
-                            
-                # Day 2 Teacher Check
-                if not current_conflict_reason and teacher2_name:
-                    for u in unavailable:
-                        if u['teacher_name'] == teacher2_name and sun_str in u['dates']:
-                            current_conflict_reason = f"周日: 讲师 {teacher2_name} 请假"
-                            break
-                
-                # D. 冲突检查：同一个讲师同一天不能排两个班 
-                # Day 1 Check
-                if not current_conflict_reason and combo1:
-                    conflict_schedule = ClassSchedule.query.join(TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id).filter(
-                        ClassSchedule.scheduled_date == sat,
-                        TeacherCourseCombo.teacher_id == combo1.teacher_id,
-                        ClassSchedule.class_id != cls.id
-                    ).first()
-                    # 还要检查作为Day2被占用的情况 (combo_id_2) -- 需 join combo_2 logic，较复杂，暂只查combo_id
-                    # 严谨做法：Check if teacher1 is busy on Sat in ANY schedule (as Day1 or Day2)
-                    # 简化：只查 scheduled_date == sat 的 combo_id (Day1) 和 scheduled_date == sat-1 的 combo_id_2 (Day2)
-                    # 这里的 conflict_schedule 只查了 Day1 撞 Day1
-                    if conflict_schedule:
-                        current_conflict_reason = f"周六: 讲师 {teacher1_name} 撞课 ({conflict_schedule.class_.name})"
-
-                # Day 2 Check (Sun)
-                # 检查有没有其他课在周日上 (即 start_date == Sun, 不太可能，都是周六开课)
-                # 或者 start_date == Sat 的课，其 Day2 (Sun) 用了这个老师
-                if not current_conflict_reason and combo2:
-                    # 查找同日期的其他排课 (都是周六开课)
-                    # 检查他们的 combo_id_2 是否占用了 teacher2
-                    # Aliasing needed for complex join, using simplified logic:
-                    # Iterate all schedules on this Sat, check their combo_2's teacher
-                    schedules_on_sat = ClassSchedule.query.filter(
-                        ClassSchedule.scheduled_date == sat,
-                        ClassSchedule.class_id != cls.id
-                    ).all()
-                    for existing_s in schedules_on_sat:
-                        if existing_s.combo_2 and existing_s.combo_2.teacher_id == combo2.teacher_id:
-                            current_conflict_reason = f"周日: 讲师 {teacher2_name} 撞课 ({existing_s.class_.name})"
-                            break
-
-                # --- 决策逻辑 ---
-                if current_conflict_reason:
-                    if conflict_mode == 'mark':
-                        # 允许冲突：直接使用此日期，并标记
-                        assigned_date = sat
-                        final_status = 'conflict'
-                        final_notes = current_conflict_reason
-                        break # 找到了（带冲突的）位置
-                    else:
-                        # 顺延模式：记录失败原因，继续找下一个日期
-                        fail_reason = current_conflict_reason
-                        continue
-                else:
-                    # 无冲突，完美
-                    assigned_date = sat
-                    final_status = 'scheduled'
-                    final_notes = 'AI自动排课'
-                    break
-            
-            if assigned_date:
-                # 设置冲突类型
-                conflict_type_val = None
-                if final_status == 'conflict':
-                    if '班主任' in (final_notes or ''):
-                        conflict_type_val = 'homeroom'
-                    elif '讲师' in (final_notes or ''):
-                        conflict_type_val = 'teacher'
-                    elif '节假日' in (final_notes or ''):
-                        conflict_type_val = 'holiday'
-
-                new_schedule = ClassSchedule(
-                    class_id=cls.id,
-                    topic_id=next_topic.id,
-                    combo_id=combo1.id if combo1 else None,
-                    combo_id_2=combo2.id if combo2 else None,
-                    scheduled_date=assigned_date,
-                    week_number=0,
-                    status=final_status,
-                    conflict_type=conflict_type_val,
-                    notes=final_notes
-                )
-                db.session.add(new_schedule)
-                generated_count += 1
-            else:
+        for a in assignments:
+            if a.get('assigned_date') is None:
                 skipped_classes_info.append({
-                    "class_name": cls.name,
-                    "reason": fail_reason or "当月无可用周六"
+                    'class_name': a.get('class_name', '未知'),
+                    'reason': a.get('skip_reason', '无可用档期')
                 })
-            
+                continue
+
+            assigned_sat = date.fromisoformat(a['assigned_date'])
+
+            # 应用用户的组合调整
+            cls_id_str = str(a['class_id'])
+            final_combo_id = a.get('combo_id')
+            final_combo_id_2 = a.get('combo_id_2')
+            if cls_id_str in combo_overrides:
+                co = combo_overrides[cls_id_str]
+                if 'combo1' in co:
+                    final_combo_id = co['combo1']
+                if 'combo2' in co:
+                    final_combo_id_2 = co['combo2']
+
+            # 确定冲突类型
+            conflict_type_val = a.get('conflict_type')  # 从算法结果中获取
+            final_status = a.get('status', 'scheduled')  # status 只管生命周期
+            final_notes = 'AI智能排课'
+
+            if a.get('conflicts'):
+                final_notes = '；'.join(a['conflicts'])
+
+            # 班主任临时覆盖
+            hr_override = homeroom_overrides.get(a['class_id'])
+
+            new_schedule = ClassSchedule(
+                class_id=a['class_id'],
+                topic_id=a['topic_id'],
+                combo_id=final_combo_id,
+                combo_id_2=final_combo_id_2,
+                scheduled_date=assigned_sat,
+                week_number=0,
+                status=final_status,
+                conflict_type=conflict_type_val,
+                notes=final_notes,
+                homeroom_override_id=hr_override
+            )
+            db.session.add(new_schedule)
+            generated_count += 1
+
+        db.session.flush()  # 让 new_schedule 获得 ID
+
+        # 4. 合班记录写入
+        import json as _json
+        # 先统计每个 source 班级的所有 target 名称（处理多合班）
+        source_targets = {}  # {source_class_id: [target_name, ...]}
+        for m in merges:
+            sid = m.get('class_id')
+            tid = m.get('target_class_id')
+            target_cls = Class.query.get(tid)
+            tname = target_cls.name if target_cls else '?'
+            source_targets.setdefault(sid, []).append(tname)
+
+        for m in merges:
+            source_class_id = m.get('class_id')
+            target_class_id = m.get('target_class_id')
+            merge_combo_id = m.get('combo_id')
+            merge_combo_id_2 = m.get('combo_id_2')
+
+            # 找到 source 班级的排课记录
+            source_schedule = ClassSchedule.query.filter(
+                ClassSchedule.class_id == source_class_id,
+                ClassSchedule.scheduled_date >= start_date,
+                ClassSchedule.scheduled_date < end_date,
+                ClassSchedule.status.in_(['scheduled'])
+            ).first()
+
+            if source_schedule:
+                # 为 target 班级创建合班记录
+                target_cls = Class.query.get(target_class_id)
+                target_topic_id = source_schedule.topic_id
+
+                # 保存 source 的原始状态快照（拆分时恢复用）
+                source_snapshot = _json.dumps({
+                    'scheduled_date': source_schedule.scheduled_date.isoformat(),
+                    'combo_id': source_schedule.combo_id,
+                    'combo_id_2': source_schedule.combo_id_2,
+                    'status': source_schedule.status,
+                    'notes': source_schedule.notes or 'AI智能排课',
+                    'homeroom_override_id': source_schedule.homeroom_override_id
+                })
+
+                merged_schedule = ClassSchedule(
+                    class_id=target_class_id,
+                    topic_id=target_topic_id,
+                    combo_id=merge_combo_id or source_schedule.combo_id,
+                    combo_id_2=merge_combo_id_2 or source_schedule.combo_id_2,
+                    scheduled_date=source_schedule.scheduled_date,
+                    week_number=0,
+                    status='scheduled',
+                    merged_with=source_schedule.id,
+                    homeroom_override_id=source_schedule.homeroom_override_id,
+                    merge_snapshot=_json.dumps({
+                        'scheduled_date': source_schedule.scheduled_date.isoformat(),
+                        'combo_id': merge_combo_id or source_schedule.combo_id,
+                        'combo_id_2': merge_combo_id_2 or source_schedule.combo_id_2,
+                        'status': 'scheduled',
+                        'notes': None,
+                        'homeroom_override_id': None
+                    }),
+                    notes=f'合班至 {source_schedule.class_.name if source_schedule.class_ else "?"}'
+                )
+                db.session.add(merged_schedule)
+                generated_count += 1
+
+                # 主记录写入合班信息（使用统计好的所有 target 名称）
+                source_schedule.merge_snapshot = source_snapshot
+                all_targets = source_targets.get(source_class_id, [])
+                all_names = '、'.join(all_targets)
+                source_schedule.notes = f'合班主记录（含 {all_names}）'
+
+        db.session.flush()
+
+        # 对本月所有日期重检冲突（新排课可能与已有排课冲突）
+        all_dates = set()
+        month_schedules = ClassSchedule.query.filter(
+            ClassSchedule.scheduled_date >= start_date,
+            ClassSchedule.scheduled_date < end_date
+        ).all()
+        for ms in month_schedules:
+            if ms.scheduled_date:
+                all_dates.add(ms.scheduled_date)
+        _recheck_conflicts_for_dates(all_dates)
         db.session.commit()
-        
-        # 自动创建/更新月度计划为草稿
+
+        # 4. 自动创建/更新月度计划为草稿
         plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
         if not plan:
             plan = MonthlyPlan(year=year, month=month, status='draft')
             db.session.add(plan)
         plan.updated_at = datetime.now()
         db.session.commit()
-        
+
+        # 清理全库残留记录
+        stale_count = _cleanup_stale_scheduled_records()
+
+        # 排课日期变动后重排所有相关班级的课题序号
+        affected_class_ids = set(a['class_id'] for a in assignments if a.get('assigned_date'))
+        for cid in affected_class_ids:
+            _resequence_topics_by_date(cid)
+
         result_msg = f'已生成 {generated_count} 节课程安排'
         if skipped_classes_info:
-            result_msg += f'。有 {len(skipped_classes_info)} 个班级未排课：' + '; '.join([f"{i['class_name']}({i['reason']})" for i in skipped_classes_info])
-            
+            result_msg += f'。有 {len(skipped_classes_info)} 个班级未排课'
+
         return jsonify({
-            'success': True, 
+            'success': True,
             'message': result_msg,
             'skipped': skipped_classes_info,
-            'plan': plan.to_dict()
+            'plan': plan.to_dict(),
+            'quality_report': quality_report,
         })
-        
+
     except Exception as e:
         db.session.rollback()
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ==================== 月度计划发布管理 ====================
+
+@schedule_bp.route('/monthly-plan/publish', methods=['POST'])
+def publish_monthly_plan():
+    """发布月度计划"""
+    data = request.get_json()
+    year = data.get('year')
+    month = data.get('month')
+    if not year or not month:
+        return jsonify({'error': '缺少 year/month'}), 400
+
+    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        return jsonify({'error': '该月度计划不存在'}), 404
+    if plan.status == 'published':
+        return jsonify({'error': '该月度计划已经是发布状态'}), 400
+
+    plan.status = 'published'
+    plan.published_at = datetime.now()
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'{year}年{month}月计划已发布', 'plan': plan.to_dict()})
+
+
+@schedule_bp.route('/monthly-plan/unpublish', methods=['POST'])
+def unpublish_monthly_plan():
+    """取消发布月度计划（回到草稿状态）"""
+    data = request.get_json()
+    year = data.get('year')
+    month = data.get('month')
+    if not year or not month:
+        return jsonify({'error': '缺少 year/month'}), 400
+
+    plan = MonthlyPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        return jsonify({'error': '该月度计划不存在'}), 404
+    if plan.status != 'published':
+        return jsonify({'error': '该月度计划未发布，无需取消'}), 400
+
+    plan.status = 'draft'
+    plan.published_at = None
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'{year}年{month}月计划已取消发布', 'plan': plan.to_dict()})

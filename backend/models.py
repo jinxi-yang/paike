@@ -207,26 +207,42 @@ class ClassSchedule(db.Model):
     combo_id_2 = db.Column(db.Integer, db.ForeignKey('teacher_course_combo.id'), comment='教-课组合(Day2)')
     scheduled_date = db.Column(db.Date, nullable=False, comment='排课日期(周六)')
     week_number = db.Column(db.Integer, comment='第几周')
-    status = db.Column(db.String(20), default='scheduled', comment='状态: scheduled/completed/cancelled/conflict')
+    status = db.Column(db.String(20), default='scheduled', comment='状态: scheduled(已排课)/completed(已完成)/cancelled(已取消)')
     conflict_type = db.Column(db.String(20), comment='冲突类型: teacher/homeroom/holiday')
     notes = db.Column(db.Text, comment='备注')
     merged_with = db.Column(db.Integer, comment='合班标识(指向主课表ID)')
     merge_snapshot = db.Column(db.Text, comment='合班前快照(JSON): 保存合班前的原始日期和组合，拆分时恢复')
+    homeroom_override_id = db.Column(db.Integer, db.ForeignKey('homeroom.id'), comment='本次排课临时班主任(覆盖班级默认班主任)')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     
     # 关系
     combo = db.relationship('TeacherCourseCombo', foreign_keys=[combo_id], backref=db.backref('schedules', lazy='dynamic'))
     combo_2 = db.relationship('TeacherCourseCombo', foreign_keys=[combo_id_2], backref=db.backref('secondary_schedules', lazy='dynamic'))
+    homeroom_override = db.relationship('Homeroom', foreign_keys=[homeroom_override_id])
 
     def to_dict(self):
+        topic_name = self.topic.name if self.topic else None
+        topic_seq = self.topic.sequence if self.topic else None
+        total = self.class_.project.topics.count() if self.class_ and self.class_.project else 0
+
+        # 拼接仪式前缀：第一节课 → 开班仪式+课程名，最后一节课 → 结业典礼+课程名
+        display_name = topic_name
+        if topic_name and topic_seq and total > 0:
+            if topic_seq == 1:
+                display_name = f'开班仪式+{topic_name}'
+            elif topic_seq == total:
+                display_name = f'结课典礼+{topic_name}'
+
         return {
             'id': self.id,
             'class_id': self.class_id,
             'class_name': self.class_.name if self.class_ else None,
+            'project_name': self.class_.project.name if self.class_ and self.class_.project else None,
             'topic_id': self.topic_id,
-            'topic_name': self.topic.name if self.topic else None,
-            'topic_sequence': self.topic.sequence if self.topic else None,
+            'topic_name': topic_name,
+            'display_topic_name': display_name,
+            'topic_sequence': topic_seq,
             'combo_id': self.combo_id,
             'combo': self.combo.to_dict() if self.combo else None,
             'combo_id_2': self.combo_id_2,
@@ -238,8 +254,9 @@ class ClassSchedule(db.Model):
             'notes': self.notes,
             'merged_with': self.merged_with,
             'merge_snapshot': self.merge_snapshot,
-            'homeroom_name': self.class_.homeroom.name if self.class_ and self.class_.homeroom else '未分配',
-            'total_topics': self.class_.project.topics.count() if self.class_ and self.class_.project else 0
+            'homeroom_name': (self.homeroom_override.name if self.homeroom_override else (self.class_.homeroom.name if self.class_ and self.class_.homeroom else '未分配')),
+            'homeroom_override_id': self.homeroom_override_id,
+            'total_topics': total
         }
 
 
@@ -298,3 +315,42 @@ class ScheduleConstraint(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+
+# ==================== 合班配置 ====================
+class MergeConfig(db.Model):
+    """合班关系配置（独立于课表记录，持久化存储）"""
+    __tablename__ = 'merge_config'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    monthly_plan_id = db.Column(db.Integer, db.ForeignKey('monthly_plan.id'), nullable=False, comment='所属月度计划')
+    topic_id = db.Column(db.Integer, db.ForeignKey('topic.id'), nullable=False, comment='合班课题')
+    primary_class_id = db.Column(db.Integer, db.ForeignKey('class.id'), nullable=False, comment='主班')
+    merged_class_id = db.Column(db.Integer, db.ForeignKey('class.id'), nullable=False, comment='并入班')
+    combo_id = db.Column(db.Integer, db.ForeignKey('teacher_course_combo.id'), comment='合班周六组合')
+    combo_id_2 = db.Column(db.Integer, db.ForeignKey('teacher_course_combo.id'), comment='合班周日组合')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    __table_args__ = (
+        db.UniqueConstraint('monthly_plan_id', 'topic_id', 'merged_class_id', name='uix_merge_config'),
+    )
+
+    # 关系
+    monthly_plan = db.relationship('MonthlyPlan', backref=db.backref('merge_configs', lazy='dynamic'))
+    topic = db.relationship('Topic')
+    primary_class = db.relationship('Class', foreign_keys=[primary_class_id])
+    merged_class = db.relationship('Class', foreign_keys=[merged_class_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'monthly_plan_id': self.monthly_plan_id,
+            'topic_id': self.topic_id,
+            'topic_name': self.topic.name if self.topic else None,
+            'primary_class_id': self.primary_class_id,
+            'primary_class_name': self.primary_class.name if self.primary_class else None,
+            'merged_class_id': self.merged_class_id,
+            'merged_class_name': self.merged_class.name if self.merged_class else None,
+            'combo_id': self.combo_id,
+            'combo_id_2': self.combo_id_2,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
