@@ -6,9 +6,18 @@ from flask_cors import CORS
 from config import Config
 from models import db
 import os
+import logging
+
+# 配置日志 - 确保控制台能看到所有日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 def create_app():
     app = Flask(__name__)
+    app.logger.setLevel(logging.DEBUG)
     app.config.from_object(Config)
     
     # 初始化扩展
@@ -97,5 +106,13 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    import signal
+    import sys
 
+    def _graceful_exit(signum, frame):
+        print('\n⏹️  收到停止信号，正在关闭...')
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _graceful_exit)
+    signal.signal(signal.SIGTERM, _graceful_exit)
+    app.run(host='0.0.0.0', port=5000, debug=True)

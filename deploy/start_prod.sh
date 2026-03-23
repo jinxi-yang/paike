@@ -6,6 +6,16 @@ PID_FILE="$(cd "$(dirname "$0")" && pwd)/paike.pid"
 
 mkdir -p "$LOG_DIR"
 
+# ---------- 工具函数 ----------
+_kill_port() {
+    local port=$1
+    if command -v fuser &>/dev/null; then
+        fuser -k "${port}/tcp" 2>/dev/null || true
+    elif command -v lsof &>/dev/null; then
+        lsof -ti:"$port" | xargs -r kill -9 2>/dev/null || true
+    fi
+}
+
 # ---------- 函数 ----------
 start() {
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
@@ -46,15 +56,20 @@ start() {
 
 stop() {
     if [ ! -f "$PID_FILE" ]; then
-        echo "⚠️  PID文件不存在，服务可能未在运行"
-        return 1
+        echo "⚠️  PID文件不存在，尝试通过端口清理..."
+        _kill_port 5000
+        return 0
     fi
     PID=$(cat "$PID_FILE")
     echo "⏹️  停止服务 (PID: $PID)..."
-    kill "$PID" 2>/dev/null
+    # 杀整个进程组（master + workers）
+    kill -- -"$PID" 2>/dev/null || kill "$PID" 2>/dev/null
     sleep 2
-    kill -9 "$PID" 2>/dev/null
+    # 若仍存活则强杀
+    kill -9 -- -"$PID" 2>/dev/null || kill -9 "$PID" 2>/dev/null
     rm -f "$PID_FILE"
+    # 兜底：确认端口已释放
+    _kill_port 5000
     echo "✅ 已停止"
 }
 

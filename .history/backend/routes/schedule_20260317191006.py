@@ -2049,8 +2049,6 @@ def _optimize_combos_per_day(assignments, constraints):
         if current_conflict_count == 0:
             continue  # 已经没冲突了，跳过
         
-        print(f'[phase2] 日期 {date_str}: {len(indices)}个班级, 当前冲突 {current_conflict_count}', flush=True)
-        
         # 穷举搜索：找讲师冲突为0的方案
         all_pair_lists = [so[1] for so in slot_options]
         
@@ -2089,7 +2087,6 @@ def _optimize_combos_per_day(assignments, constraints):
         
         # 应用最优方案
         if best_assignment and best_conflict_count < current_conflict_count:
-            print(f'[phase2] → 优化后冲突: {best_conflict_count}', flush=True)
             for i, (c1, c2) in enumerate(best_assignment):
                 idx = slot_options[i][0]
                 is_locked = slot_options[i][2]
@@ -2125,8 +2122,6 @@ def _optimize_combos_per_day(assignments, constraints):
                     a['conflicts'] = [c for c in old_conflicts if '讲师' not in c]
                     if not a['conflicts']:
                         a['conflict_type'] = None
-        else:
-            print(f'[phase2] → 无法消除! 最优仍有 {best_conflict_count} 个冲突 (穷举了所有组合)', flush=True)
 
 
 def _count_teacher_conflicts_for_day(slot_options, assignments, combo_cache):
@@ -2679,57 +2674,33 @@ def _run_best_of_n(year, month, constraints, n_rounds=30, **kwargs):
     precomputed = _precompute_class_data(year, month, constraints, **kwargs)
     t_precompute = time.time()
     print(f'[perf] 预计算耗时: {t_precompute - t_start:.2f}s, 班级数: {len(precomputed["class_infos"])}', flush=True)
+    # DEBUG: 临时禁用预计算，测试冲突是否由重构引起
+    # 如果禁用后仍有冲突，说明冲突不是重构引起的
+    use_precomputed = False  # 改为 False 可禁用预计算
 
     best_result = None
     best_score = -1
-    best_conflicts = float('inf')
-    import copy
 
     for i in range(n_rounds):
         seed = None if i == 0 else random.randint(1, 999999)
         assignments, quality = _run_scheduling_algorithm(
             year, month, constraints, shuffle_seed=seed,
-            precomputed=precomputed, **kwargs
+            precomputed=precomputed if use_precomputed else None, **kwargs
         )
-        # 先快速检查 Phase 1 冲突数
-        p1_conflicts = sum(1 for a in assignments if a.get('conflicts'))
-        
-        # 如果 Phase 1 已无冲突，不需要 Phase 2，直接用
-        if p1_conflicts == 0:
-            quality = _build_quality_report(assignments)
-            score = quality.get('overall_score', 0)
-            if 0 < best_conflicts or score > best_score:
-                best_conflicts = 0
-                best_score = score
-                best_result = (assignments, quality)
-            print(f'[perf] 第{i+1}轮即无冲突, 提前完成', flush=True)
-            break
-        
-        # Phase 1 有冲突 → 跑 Phase 2 尝试消除
-        assignments_copy = copy.deepcopy(assignments)
-        _optimize_combos_per_day(assignments_copy, constraints)
-        quality = _build_quality_report(assignments_copy)
-        score = quality.get('overall_score', 0)
-        conflict_count = quality.get('summary', {}).get('conflicts', 0)
-
-        # 优先选冲突最少的，冲突数相同时选得分最高的
-        if (conflict_count < best_conflicts or
-            (conflict_count == best_conflicts and score > best_score)):
-            best_conflicts = conflict_count
+        score = quality.get('overall_score', 0) if quality else 0
+        if score > best_score:
             best_score = score
-            best_result = (assignments_copy, quality)
-        
-        # 找到0冲突就提前退出
-        if best_conflicts == 0:
-            print(f'[perf] 第{i+1}轮Phase2消除冲突, 提前完成', flush=True)
-            break
+            best_result = (assignments, quality)
 
     t_rounds = time.time()
-    actual_rounds = min(i + 1, n_rounds) if 'i' in dir() else n_rounds
-    print(f'[perf] 实跑{actual_rounds}/{n_rounds}轮, 耗时: {t_rounds - t_precompute:.2f}s, 最优冲突数: {best_conflicts}', flush=True)
+    print(f'[perf] {n_rounds}轮排课耗时: {t_rounds - t_precompute:.2f}s', flush=True)
 
     if best_result:
         assignments, quality = best_result
+        # 阶段二：在最优结果上执行一次组合优化（消除讲师冲突）
+        _optimize_combos_per_day(assignments, constraints)
+        # 重算质量报告（优化后冲突可能减少了）
+        quality = _build_quality_report(assignments)
         t_end = time.time()
         print(f'[perf] 总耗时: {t_end - t_start:.2f}s', flush=True)
         return assignments, quality

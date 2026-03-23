@@ -20,4 +20,6 @@ fi
 
 # 启动（开发模式）
 echo "🚀 启动服务: http://0.0.0.0:5000"
-python3 app.py
+trap 'echo "⏹️ 正在停止..."; kill 0; exit 0' INT TERM
+python3 app.py &
+wait $!
