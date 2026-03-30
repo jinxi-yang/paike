@@ -15,40 +15,22 @@ def class_status(class_id):
     project = Project.query.get(cls.project_id)
     
     # 获取该项目的所有课题（按序号排列）
-    topics = Topic.query.filter_by(project_id=cls.project_id).order_by(Topic.sequence).all()
+    topics = Topic.query.filter_by(project_id=cls.project_id).order_by(Topic.id).all()
     
     # #21: 删除重复的状态自动转换，统一由 classes.py 的 sync_class_statuses 处理
     # （GET classes 列表时已自动触发 sync_class_statuses）
     
     # 获取该班级已有的排课记录
     existing = ClassSchedule.query.filter_by(class_id=class_id).all()
-    existing_map = {}  # topic_id -> schedule_dict（保留最新日期的记录）
-    duplicate_warnings = []  # #2: 记录有多条记录的课题
-    topic_record_counts = {}
+    existing_map = {}  # topic_id -> list of schedule_dict
     
     for s in existing:
-        topic_record_counts[s.topic_id] = topic_record_counts.get(s.topic_id, 0) + 1
-        if s.topic_id not in existing_map or (s.scheduled_date and (
-            not existing_map[s.topic_id].get('_raw_date') or 
-            s.scheduled_date > existing_map[s.topic_id]['_raw_date']
-        )):
-            d = s.to_dict()
-            d['_raw_date'] = s.scheduled_date  # 临时字段用于比较
-            existing_map[s.topic_id] = d
+        if s.topic_id not in existing_map:
+            existing_map[s.topic_id] = []
+        existing_map[s.topic_id].append(s.to_dict())
     
-    # 清理临时字段
-    for v in existing_map.values():
-        v.pop('_raw_date', None)
-    
-    # #2: 构建重复记录警告
-    for tid, count in topic_record_counts.items():
-        if count > 1:
-            topic = Topic.query.get(tid)
-            duplicate_warnings.append({
-                'topic_id': tid,
-                'topic_name': topic.name if topic else str(tid),
-                'record_count': count
-            })
+    for tid in existing_map:
+        existing_map[tid].sort(key=lambda x: x.get('scheduled_date') or '')
     
     # 构建课题列表（含combo选项 + 已有排课信息）
     topic_list = []
@@ -56,8 +38,18 @@ def class_status(class_id):
         combos = TeacherCourseCombo.query.filter_by(topic_id=t.id).all()
         topic_data = t.to_dict()
         topic_data['combos'] = [c.to_dict() for c in combos]
-        topic_data['existing_schedule'] = existing_map.get(t.id, None)
+        topic_data['existing_schedules'] = existing_map.get(t.id, [])
         topic_list.append(topic_data)
+    
+    # 按上课时间排序：有排课日期的按日期升序，无排课日期的放最后
+    def _sort_key(item):
+        schedules = item.get('existing_schedules', [])
+        if schedules:
+            dates = [s.get('scheduled_date', '') for s in schedules if s.get('scheduled_date')]
+            if dates:
+                return (0, min(dates))  # 有日期排前面
+        return (1, '')  # 无日期排后面
+    topic_list.sort(key=_sort_key)
     
     from config import Config
     
@@ -71,8 +63,7 @@ def class_status(class_id):
         'existing_count': len(existing_map),
         'completed_count': completed_count,
         'total_topics': len(topics),
-        'weeks_interval': getattr(Config, 'MIN_WEEKS_INTERVAL', 4),
-        'duplicate_warnings': duplicate_warnings  # #2
+        'weeks_interval': getattr(Config, 'MIN_WEEKS_INTERVAL', 4)
     })
 
 
@@ -99,81 +90,76 @@ def init_class_progress():
     
     # #4: 不再修改 topic.sequence（拖拽排序仅作为本次提交的顺序，不影响项目级课题排列）
     
+    # Group items by topic_id to properly handle duplicates
     created = []
     skipped = []
+    from collections import defaultdict
+    topic_items = defaultdict(list)
     for item in items:
         topic_id = item.get('topic_id')
         combo_id = item.get('combo_id')
-        combo_id_2 = item.get('combo_id_2')
         date_str = item.get('date')
-        sequence = item.get('sequence')
-        
         if not topic_id or not combo_id or not date_str:
-            # 记录跳过的条目而非静默忽略
             skipped.append({
                 'topic_id': topic_id,
                 'reason': '缺少必填信息' + ('（未选周六组合）' if not combo_id else '') + ('（未选日期）' if not date_str else '')
             })
             continue
-        
-        # #3: 检查是否已有该课题的排课记录（排除合班子记录）
+        topic_items[topic_id].append(item)
+    
+    for topic_id, t_items in topic_items.items():
         all_existing = ClassSchedule.query.filter_by(
             class_id=class_id, topic_id=topic_id
         ).all()
         
-        # 分离：普通记录 vs 合班记录
         normal_records = [r for r in all_existing if not r.merged_with]
-        merged_records = [r for r in all_existing if r.merged_with]
+        # Sort by scheduled_date to align predictably with UI's index
+        normal_records.sort(key=lambda r: (r.scheduled_date is None, r.scheduled_date))
         
-        if normal_records and not clear_existing:
-            # 更新第一条普通记录，删除多余的普通重复记录（保留合班记录不动）
-            keep = normal_records[0]
-            for dup in normal_records[1:]:
-                db.session.delete(dup)
+        for i, item in enumerate(t_items):
+            combo_id = item.get('combo_id')
+            combo_id_2 = item.get('combo_id_2')
+            date_str = item.get('date')
+            sequence = item.get('sequence')
+            has_opening = item.get('has_opening', False)
+            has_team_building = item.get('has_team_building', False)
+            has_closing = item.get('has_closing', False)
+            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            record_status = 'completed' if parsed_date < today else 'scheduled'
             
-            keep.combo_id = combo_id
-            keep.combo_id_2 = combo_id_2 if combo_id_2 else None
-            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            keep.scheduled_date = parsed_date
-            keep.status = 'completed' if parsed_date < today else 'scheduled'
-            # #1: 设置 week_number
-            if sequence:
-                keep.week_number = sequence
-            # #18: 保留已有的 notes，不覆盖
-            # #19: 保留已有的 homeroom_override_id，不清除
-            created.append(keep.to_dict())
-        elif not all_existing or clear_existing:
-            # 新建排课记录（没有任何已有记录，或 clear_existing 模式）
-            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            record_status = 'completed' if parsed_date < today else 'scheduled'
-            schedule = ClassSchedule(
-                class_id=class_id,
-                topic_id=topic_id,
-                combo_id=combo_id,
-                combo_id_2=combo_id_2 if combo_id_2 else None,
-                scheduled_date=parsed_date,
-                week_number=sequence,  # #1: 设置 week_number
-                status=record_status,
-                notes='课程录入导入'  # #18: 更准确的描述
-            )
-            db.session.add(schedule)
-            created.append({'topic_id': topic_id, 'status': record_status})
-        else:
-            # 只有合班记录，没有普通记录 → 新建一条普通记录
-            parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            record_status = 'completed' if parsed_date < today else 'scheduled'
-            schedule = ClassSchedule(
-                class_id=class_id,
-                topic_id=topic_id,
-                combo_id=combo_id,
-                combo_id_2=combo_id_2 if combo_id_2 else None,
-                scheduled_date=parsed_date,
-                week_number=sequence,
-                status=record_status,
-                notes='课程录入导入'
-            )
-            db.session.add(schedule)
-            created.append({'topic_id': topic_id, 'status': record_status})
+            if not clear_existing and i < len(normal_records):
+                keep = normal_records[i]
+                keep.combo_id = combo_id
+                keep.combo_id_2 = combo_id_2 if combo_id_2 else None
+                keep.scheduled_date = parsed_date
+                keep.status = record_status
+                if sequence:
+                    keep.week_number = sequence
+                keep.has_opening = has_opening
+                keep.has_team_building = has_team_building
+                keep.has_closing = has_closing
+                created.append(keep.to_dict())
+            else:
+                schedule = ClassSchedule(
+                    class_id=class_id,
+                    topic_id=topic_id,
+                    combo_id=combo_id,
+                    combo_id_2=combo_id_2 if combo_id_2 else None,
+                    scheduled_date=parsed_date,
+                    week_number=sequence,
+                    status=record_status,
+                    notes='课程录入导入',
+                    has_opening=has_opening,
+                    has_team_building=has_team_building,
+                    has_closing=has_closing
+                )
+                db.session.add(schedule)
+                created.append({'topic_id': topic_id, 'status': record_status})
+        
+        # Delete any excess normal records from database that were removed in the UI but not explicitly deleted
+        if not clear_existing and len(normal_records) > len(t_items):
+            for dup in normal_records[len(t_items):]:
+                db.session.delete(dup)
     
     # 更新班级状态
     if cls.status == 'planning':
@@ -187,10 +173,6 @@ def init_class_progress():
             cls.start_date = min(dates)
     
     db.session.commit()
-    
-    # 按日期重排课题 sequence，确保序号和日期顺序一致
-    from .schedule import _resequence_topics_by_date
-    _resequence_topics_by_date(class_id)
     
     # 检查班级是否所有课题已完成(仅在排课变更时触发)
     from .classes import check_class_completion

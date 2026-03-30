@@ -55,35 +55,23 @@
 | title | VARCHAR(50) | | 职称（教授/副教授等） |
 | expertise | TEXT | | 擅长领域 |
 | phone | VARCHAR(20) | | 联系电话 |
+| topic_id | INTEGER | | 主讲课题ID → topic.id（自动同步教课组合标识） |
+| courses | TEXT | | 主讲课程列表（JSON数组格式存放纯文本课程名，自动同步教课组合） |
 | created_at | DATETIME | | 创建时间 |
 
-**关联关系**: 通过教-课组合(teacher_course_combo)关联到课程
+**关联关系**: 归属一个课题(topic)，并自动维护与其关联的教-课组合(teacher_course_combo)
+
 
 ---
 
-## 5. course - 课程
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| id | INTEGER | ✅ | 主键，自增 |
-| topic_id | INTEGER | | 关联课题ID → topic.id（用于归类） |
-| name | VARCHAR(200) | ✅ | 课程名称 |
-| description | TEXT | | 课程描述 |
-| duration_days | INTEGER | | 时长(天)，默认2 |
-| created_at | DATETIME | | 创建时间 |
-
-**关联关系**: 属于一个课题(topic)，通过组合关联讲师
-
----
-
-## 6. teacher_course_combo - 教-课组合
+## 5. teacher_course_combo - 教-课组合
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | id | INTEGER | ✅ | 主键，自增 |
 | topic_id | INTEGER | ✅ | 关联课题ID → topic.id |
 | teacher_id | INTEGER | ✅ | 关联讲师ID → teacher.id |
-| course_id | INTEGER | ✅ | 关联课程ID → course.id |
+| course_name | VARCHAR(200) | ✅ | 课程名称（纯文本） |
 | priority | INTEGER | | 优先级(用于推荐排课)，默认0 |
 | created_at | DATETIME | | 创建时间 |
 
@@ -91,7 +79,7 @@
 
 ---
 
-## 7. class - 班级
+## 6. class - 班级
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -107,7 +95,7 @@
 
 ---
 
-## 8. class_schedule - 班级课表
+## 7. class_schedule - 班级课表
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -124,6 +112,12 @@
 | merged_with | INTEGER | | 合班标识(指向主课表ID)。有值表示该记录已被合并到主记录，拆分时清除 |
 | merge_snapshot | TEXT | | 合班前快照(JSON)，保存合班前的原始日期/组合/状态，拆分时用于恢复 |
 | homeroom_override_id | INTEGER | | 本次排课临时班主任ID → homeroom.id。为空时使用班级默认班主任 |
+| has_opening | BOOLEAN | | (周六) 开学典礼标记，默认false |
+| has_team_building | BOOLEAN | | (周六) 团建标记，默认false |
+| has_closing | BOOLEAN | | (周六) 结业典礼标记，默认false |
+| day2_has_opening | BOOLEAN | | (周日) 开学典礼标记，默认false |
+| day2_has_team_building | BOOLEAN | | (周日) 团建标记，默认false |
+| day2_has_closing | BOOLEAN | | (周日) 结业典礼标记，默认false |
 | created_at | DATETIME | | 创建时间 |
 | updated_at | DATETIME | | 更新时间 |
 
@@ -146,7 +140,7 @@
 
 ---
 
-## 9. monthly_plan - 月度计划
+## 8. monthly_plan - 月度计划
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -162,7 +156,7 @@
 
 ---
 
-## 10. schedule_constraint - 排课约束条件
+## 9. schedule_constraint - 排课约束条件
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -176,13 +170,28 @@
 
 ---
 
+## 10. merge_config - 合班配置
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | INTEGER | ✅ | 主键，自增 |
+| monthly_plan_id | INTEGER | ✅ | 所属月度计划ID → monthly_plan.id |
+| topic_id | INTEGER | ✅ | 合班课题ID → topic.id |
+| primary_class_id | INTEGER | ✅ | 主班ID → class.id |
+| merged_class_id | INTEGER | ✅ | 并入班ID → class.id |
+| combo_id | INTEGER | | 合班周六组合ID → teacher_course_combo.id |
+| combo_id_2 | INTEGER | | 合班周日组合ID → teacher_course_combo.id |
+| created_at | DATETIME | | 创建时间 |
+
+**约束**: monthly_plan_id + topic_id + merged_class_id 联合唯一
+
+---
+
 ## ER关系图
 
 ```
 project 1──N topic 1──N teacher_course_combo N──1 teacher
-   │                        │
-   │                    N──1 course
-   │
+   │                        
    1──N class 1──N class_schedule
           │              │
       N──1 homeroom   N──1 topic
@@ -192,4 +201,5 @@ project 1──N topic 1──N teacher_course_combo N──1 teacher
                      N──0..1 homeroom (临时班主任: homeroom_override_id)
 
 monthly_plan 1──N schedule_constraint
+monthly_plan 1──N merge_config N──1 topic
 ```

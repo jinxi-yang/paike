@@ -10,11 +10,12 @@ topic_bp = Blueprint('topic', __name__)
 def get_all():
     """获取所有课题（可按项目过滤）"""
     project_id = request.args.get('project_id', type=int)
+    include_combos = request.args.get('include_combos', 'false').lower() == 'true'
     query = Topic.query
     if project_id:
         query = query.filter_by(project_id=project_id)
-    topics = query.order_by(Topic.project_id, Topic.sequence).all()
-    return jsonify([t.to_dict() for t in topics])
+    topics = query.order_by(Topic.project_id, Topic.id).all()
+    return jsonify([t.to_dict(include_combos=include_combos) for t in topics])
 
 @topic_bp.route('/<int:id>', methods=['GET'])
 def get_one(id):
@@ -65,5 +66,41 @@ def delete(id):
     # Safe to delete — also cascade-delete its combos
     TeacherCourseCombo.query.filter_by(topic_id=id).delete()
     db.session.delete(t)
+    db.session.commit()
+    return jsonify({'message': '删除成功'})
+
+
+@topic_bp.route('/<int:id>/combos', methods=['GET'])
+def get_topic_combos(id):
+    """获取课题下的讲师-课程组合列表"""
+    topic = Topic.query.get_or_404(id)
+    combos = TeacherCourseCombo.query.filter_by(topic_id=id).all()
+    result = []
+    for c in combos:
+        result.append({
+            'id': c.id,
+            'teacher_id': c.teacher_id,
+            'teacher_name': c.teacher.name if c.teacher else None,
+            'course_name': c.course_name,
+        })
+    return jsonify(result)
+
+
+@topic_bp.route('/<int:id>/combos/<int:combo_id>', methods=['DELETE'])
+def delete_topic_combo(id, combo_id):
+    """删除课题下的单个讲师-课程组合（有排课引用时拒绝）"""
+    combo = TeacherCourseCombo.query.get_or_404(combo_id)
+    if combo.topic_id != id:
+        return jsonify({'error': '组合不属于该课题'}), 400
+    ref_count = ClassSchedule.query.filter(
+        ClassSchedule.status.notin_(['cancelled']),
+        db.or_(
+            ClassSchedule.combo_id == combo_id,
+            ClassSchedule.combo_id_2 == combo_id
+        )
+    ).count()
+    if ref_count > 0:
+        return jsonify({'error': f'该组合有 {ref_count} 条排课记录引用，无法删除'}), 400
+    db.session.delete(combo)
     db.session.commit()
     return jsonify({'message': '删除成功'})

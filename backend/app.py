@@ -62,26 +62,26 @@ def create_app():
         topic_bp,
         homeroom_bp,
         teacher_bp,
-        course_bp,
         combo_bp,
         classes_bp,
         schedule_bp,
         ai_bp,
         init_bp,
-        auth_bp
+        auth_bp,
+        city_bp
     )
     
     app.register_blueprint(project_bp, url_prefix='/api/projects')
     app.register_blueprint(topic_bp, url_prefix='/api/topics')
     app.register_blueprint(homeroom_bp, url_prefix='/api/homerooms')
     app.register_blueprint(teacher_bp, url_prefix='/api/teachers')
-    app.register_blueprint(course_bp, url_prefix='/api/courses')
     app.register_blueprint(combo_bp, url_prefix='/api/combos')
     app.register_blueprint(classes_bp, url_prefix='/api/classes')
     app.register_blueprint(schedule_bp, url_prefix='/api/schedule')
     app.register_blueprint(ai_bp, url_prefix='/api/ai')
     app.register_blueprint(init_bp, url_prefix='/api/init')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(city_bp, url_prefix='/api/cities')
     
     # 健康检查
     @app.route('/api/health')
@@ -106,13 +106,27 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    import signal
-    import sys
+    # import signal
+    # import sys
 
-    def _graceful_exit(signum, frame):
-        print('\n⏹️  收到停止信号，正在关闭...')
-        sys.exit(0)
+    # def _graceful_exit(signum, frame):
+    #     print('\n⏹️  收到停止信号，正在关闭...')
+    #     os._exit(0)
 
-    signal.signal(signal.SIGINT, _graceful_exit)
-    signal.signal(signal.SIGTERM, _graceful_exit)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # signal.signal(signal.SIGINT, _graceful_exit)
+    # signal.signal(signal.SIGTERM, _graceful_exit)
+    # app.run(host='0.0.0.0', port=5000, debug=True)
+    import atexit
+    import os
+
+    def _cleanup():
+        print('\n⏹️  正在执行清理工作并关闭...')
+        # 这里可以放数据库断开连接等清理代码
+        # os._exit(0) 通常不需要，除非强制退出
+
+    # 注册退出处理函数
+    atexit.register(_cleanup)
+
+    # 注意：在 reloader 开启时，signal.signal 可能会在父子进程间产生竞争
+    # 仅使用 atexit 通常足以应对 Ctrl+C
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

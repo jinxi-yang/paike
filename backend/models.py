@@ -6,6 +6,28 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+
+# ==================== 城市（教室容量配置） ====================
+class City(db.Model):
+    """城市（上课地点及教室容量配置）"""
+    __tablename__ = 'city'
+    
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(50), nullable=False, unique=True, comment='城市名称')
+    max_classrooms = db.Column(db.Integer, default=99, comment='教室数量上限')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    
+    # 关系
+    classes = db.relationship('Class', backref='city_ref', lazy='dynamic')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'max_classrooms': self.max_classrooms
+        }
+
+
 # ==================== 项目（原培训班类型） ====================
 class Project(db.Model):
     """项目（统一概念，原'培训班类型'）"""
@@ -17,7 +39,7 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now, comment='创建时间')
     
     # 关系
-    topics = db.relationship('Topic', backref='project', lazy='dynamic', order_by='Topic.sequence')
+    topics = db.relationship('Topic', backref='project', lazy='dynamic')
     classes = db.relationship('Class', backref='project', lazy='dynamic')
     
     def to_dict(self, include_topics=False, include_classes=False):
@@ -63,7 +85,8 @@ class Topic(db.Model):
             'description': self.description
         }
         if include_combos:
-            result['combos'] = [c.to_dict() for c in self.combos.all()]
+            # 直接返回该课题下所有 combo（不再用 teacher.topic_id 过滤）
+            result['combos'] = [c.to_dict() for c in self.combos.all() if c.teacher]
         return result
 
 
@@ -100,43 +123,29 @@ class Teacher(db.Model):
     title = db.Column(db.String(50), comment='职称')
     expertise = db.Column(db.Text, comment='擅长领域')
     phone = db.Column(db.String(20), comment='联系电话')
+    topic_id = db.Column(db.Integer, db.ForeignKey('topic.id'), comment='所属课题')
+    courses = db.Column(db.Text, comment='课程名称列表(JSON数组)')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     # 关系
     combos = db.relationship('TeacherCourseCombo', backref='teacher', lazy='dynamic')
+    topic = db.relationship('Topic', backref=db.backref('teachers', lazy='dynamic'))
     
     def to_dict(self):
+        import json as _json
+        courses_list = []
+        if self.courses:
+            try:
+                courses_list = _json.loads(self.courses)
+            except (ValueError, TypeError):
+                courses_list = []
         return {
             'id': self.id,
             'name': self.name,
             'title': self.title,
             'expertise': self.expertise,
-            'phone': self.phone
-        }
-
-
-# ==================== 课程 ====================
-class Course(db.Model):
-    """课程"""
-    __tablename__ = 'course'
-    
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    topic_id = db.Column(db.Integer, db.ForeignKey('topic.id'), comment='关联课题(用于归类)')
-    name = db.Column(db.String(200), nullable=False, comment='课程名称')
-    description = db.Column(db.Text, comment='课程描述')
-    duration_days = db.Column(db.Integer, default=2, comment='时长(天)')
-    created_at = db.Column(db.DateTime, default=datetime.now)
-    
-    # 关系
-    combos = db.relationship('TeacherCourseCombo', backref='course', lazy='dynamic')
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'topic_id': self.topic_id,
-            'name': self.name,
-            'description': self.description,
-            'duration_days': self.duration_days
+            'phone': self.phone,
+            'courses': courses_list
         }
 
 
@@ -148,7 +157,7 @@ class TeacherCourseCombo(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     topic_id = db.Column(db.Integer, db.ForeignKey('topic.id'), nullable=False, comment='关联课题')
     teacher_id = db.Column(db.Integer, db.ForeignKey('teacher.id'), nullable=False, comment='关联讲师')
-    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False, comment='关联课程')
+    course_name = db.Column(db.String(200), nullable=False, default='', comment='课程名称')
     priority = db.Column(db.Integer, default=0, comment='优先级(用于推荐)')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
@@ -156,10 +165,11 @@ class TeacherCourseCombo(db.Model):
         return {
             'id': self.id,
             'topic_id': self.topic_id,
+            'topic_name': self.topic.name if self.topic else None,
+            'project_id': self.topic.project_id if self.topic else None,
             'teacher_id': self.teacher_id,
             'teacher_name': self.teacher.name if self.teacher else None,
-            'course_id': self.course_id,
-            'course_name': self.course.name if self.course else None
+            'course_name': self.course_name
         }
 
 
@@ -172,6 +182,7 @@ class Class(db.Model):
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False, comment='所属项目')
     name = db.Column(db.String(100), nullable=False, comment='班级名称')
     homeroom_id = db.Column(db.Integer, db.ForeignKey('homeroom.id'), comment='班主任')
+    city_id = db.Column(db.Integer, db.ForeignKey('city.id'), comment='上课城市')
     start_date = db.Column(db.Date, comment='首次开课日期')
     status = db.Column(db.String(20), default='planning', comment='状态: planning/active/completed')
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -187,6 +198,8 @@ class Class(db.Model):
             'name': self.name,
             'homeroom_id': self.homeroom_id,
             'homeroom_name': self.homeroom.name if self.homeroom else None,
+            'city_id': self.city_id,
+            'city_name': self.city_ref.name if self.city_ref else '北京',
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'status': self.status
         }
@@ -213,6 +226,12 @@ class ClassSchedule(db.Model):
     merged_with = db.Column(db.Integer, comment='合班标识(指向主课表ID)')
     merge_snapshot = db.Column(db.Text, comment='合班前快照(JSON): 保存合班前的原始日期和组合，拆分时恢复')
     homeroom_override_id = db.Column(db.Integer, db.ForeignKey('homeroom.id'), comment='本次排课临时班主任(覆盖班级默认班主任)')
+    has_opening = db.Column(db.Boolean, default=False, comment='(周六)开学典礼')
+    has_team_building = db.Column(db.Boolean, default=False, comment='(周六)团建')
+    has_closing = db.Column(db.Boolean, default=False, comment='(周六)结业典礼')
+    day2_has_opening = db.Column(db.Boolean, default=False, comment='(周日)开学典礼')
+    day2_has_team_building = db.Column(db.Boolean, default=False, comment='(周日)团建')
+    day2_has_closing = db.Column(db.Boolean, default=False, comment='(周日)结业典礼')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     
@@ -226,19 +245,26 @@ class ClassSchedule(db.Model):
         topic_seq = self.topic.sequence if self.topic else None
         total = self.class_.project.topics.count() if self.class_ and self.class_.project else 0
 
-        # 拼接仪式前缀：第一节课 → 开班仪式+课程名，最后一节课 → 结业典礼+课程名
+        # 拼接仪式前缀：根据开关字段动态拼接
         display_name = topic_name
-        if topic_name and topic_seq and total > 0:
-            if topic_seq == 1:
-                display_name = f'开班仪式+{topic_name}'
-            elif topic_seq == total:
-                display_name = f'结课典礼+{topic_name}'
+        if topic_name:
+            prefixes = []
+            if self.has_opening or self.day2_has_opening:
+                prefixes.append('开学典礼')
+            if self.has_team_building or self.day2_has_team_building:
+                prefixes.append('团建')
+            if self.has_closing or self.day2_has_closing:
+                prefixes.append('结业典礼')
+            if prefixes:
+                display_name = '+'.join(prefixes) + '+' + topic_name
 
         return {
             'id': self.id,
             'class_id': self.class_id,
             'class_name': self.class_.name if self.class_ else None,
+            'project_id': self.class_.project_id if self.class_ else None,
             'project_name': self.class_.project.name if self.class_ and self.class_.project else None,
+            'city_name': (self.class_.city_ref.name if self.class_ and self.class_.city_ref else '北京'),
             'topic_id': self.topic_id,
             'topic_name': topic_name,
             'display_topic_name': display_name,
@@ -256,6 +282,12 @@ class ClassSchedule(db.Model):
             'merge_snapshot': self.merge_snapshot,
             'homeroom_name': (self.homeroom_override.name if self.homeroom_override else (self.class_.homeroom.name if self.class_ and self.class_.homeroom else '未分配')),
             'homeroom_override_id': self.homeroom_override_id,
+            'has_opening': bool(self.has_opening),
+            'has_team_building': bool(self.has_team_building),
+            'has_closing': bool(self.has_closing),
+            'day2_has_opening': bool(self.day2_has_opening),
+            'day2_has_team_building': bool(self.day2_has_team_building),
+            'day2_has_closing': bool(self.day2_has_closing),
             'total_topics': total
         }
 

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from datetime import date, timedelta
 from sqlalchemy import func
 from models import db, Class, ClassSchedule, Topic, TeacherCourseCombo, Homeroom
-from .schedule import is_holiday, find_next_available_saturday, _recheck_conflicts_for_dates, _cleanup_stale_scheduled_records
+from .schedule import is_holiday, find_next_available_saturday, _recheck_conflicts_for_dates, _cleanup_stale_scheduled_records, _resequence_topics_by_date
 
 classes_bp = Blueprint('classes', __name__)
 
@@ -33,7 +33,7 @@ def precheck_plan():
     except ValueError:
         return jsonify({'error': 'Invalid start_date format, expected YYYY-MM-DD'}), 400
 
-    topics = Topic.query.filter_by(project_id=project_id).order_by(Topic.sequence).all()
+    topics = Topic.query.filter_by(project_id=project_id).order_by(Topic.id).all()
     if not topics:
         return jsonify({
             'project_id': project_id,
@@ -148,26 +148,33 @@ def sync_class_statuses():
     if updated_classes or updated_schedules or fixed_schedules:
         db.session.commit()
     
-    # 4. 清理残留记录：课题已completed但仍有scheduled的旧auto_schedule记录
-    _cleanup_stale_scheduled_records()
+    # 4. 禁用：不再在自动刷新时后台清理“过期未完成课程”，防止误删用户新加的未规划课题内容。
+    # 用户明确删除时自行在前端操作。
+    # _cleanup_stale_scheduled_records()
+    pass
 
 
 def check_class_completion(class_id):
-    """检查单个班级是否所有课题已完成 - 仅在排课变更时调用（含反向纠正）"""
+    """检查单个班级是否所有课题已完成 - 按实际排课数量计算（含反向纠正）"""
     cls = Class.query.get(class_id)
     if not cls:
         return
     
-    total_topics = Topic.query.filter_by(project_id=cls.project_id).count()
-    if total_topics == 0:
+    # 用该班级实际的排课数作为总数（不按项目课题总数）
+    total_schedules = ClassSchedule.query.filter(
+        ClassSchedule.class_id == class_id,
+        ClassSchedule.merged_with.is_(None)
+    ).count()
+    if total_schedules == 0:
         return
     
-    completed_topics = ClassSchedule.query.filter(
+    completed_schedules = ClassSchedule.query.filter(
         ClassSchedule.class_id == class_id,
-        ClassSchedule.status == 'completed'
+        ClassSchedule.status == 'completed',
+        ClassSchedule.merged_with.is_(None)
     ).count()
     
-    if completed_topics >= total_topics:
+    if completed_schedules >= total_schedules:
         if cls.status != 'completed':
             cls.status = 'completed'
             db.session.commit()
@@ -212,7 +219,8 @@ def create():
     c = Class(
         project_id=pid,
         name=data.get('name'),
-        homeroom_id=data.get('homeroom_id'),
+        homeroom_id=data.get('homeroom_id') or None,
+        city_id=data.get('city_id') or None,
         start_date=date.fromisoformat(data.get('start_date')) if data.get('start_date') else None,
         status='planning'
     )
@@ -221,9 +229,10 @@ def create():
     
     # 自动生成课表
     auto_generate = data.get('auto_generate', True)
+    selected_topic_ids = data.get('selected_topic_ids')  # 灵活课题选择
     result = None
     if auto_generate and c.start_date and c.project_id:
-        result = auto_schedule_class(c)
+        result = auto_schedule_class(c, selected_topic_ids)
         for s in result['schedules']:
             db.session.add(s)
         db.session.flush()
@@ -246,27 +255,40 @@ def create():
 
 @classes_bp.route('/<int:id>', methods=['DELETE'])
 def delete_class(id):
-    """删除班级（级联删除所有排课记录和合班配置）"""
+    """删除班级（级联删除所有排课记录和合班配置，并重检受影响日期的冲突）"""
     c = Class.query.get_or_404(id)
     
-    # 1. 清除其他班级排课记录中指向该班级排课的 merged_with 引用
-    this_class_schedule_ids = [s.id for s in ClassSchedule.query.filter_by(class_id=id).all()]
+    # 1. 收集将被删除记录的日期，以便在删除后重检这些日期的冲突
+    affected_dates = set()
+    schedules = ClassSchedule.query.filter_by(class_id=id).all()
+    for s in schedules:
+        if s.scheduled_date:
+            affected_dates.add(s.scheduled_date)
+            
+    # 2. 清除其他班级排课记录中指向该班级排课的 merged_with 引用
+    this_class_schedule_ids = [s.id for s in schedules]
     if this_class_schedule_ids:
         ClassSchedule.query.filter(
             ClassSchedule.merged_with.in_(this_class_schedule_ids)
         ).update({ClassSchedule.merged_with: None}, synchronize_session='fetch')
     
-    # 2. 删除合班配置
+    # 3. 删除合班配置
     from models import MergeConfig
     MergeConfig.query.filter(
         db.or_(MergeConfig.primary_class_id == id, MergeConfig.merged_class_id == id)
     ).delete(synchronize_session='fetch')
     
-    # 3. 删除该班级的所有排课记录
-    ClassSchedule.query.filter_by(class_id=id).delete()
+    # 4. 删除该班级的所有排课记录
+    ClassSchedule.query.filter_by(class_id=id).delete(synchronize_session='fetch')
     
-    # 4. 删除班级
+    # 5. 删除班级
     db.session.delete(c)
+    db.session.flush() # 先 flush 以便查不到已删除的课
+    
+    # 6. 对影响的日期重新检测冲突，消除幽灵冲突提示
+    if affected_dates:
+        _recheck_conflicts_for_dates(affected_dates)
+        
     db.session.commit()
     return jsonify({'message': f'班级「{c.name}」及其所有排课记录已删除'})
 
@@ -284,6 +306,8 @@ def update(id):
         c.name = data['name']
     if 'homeroom_id' in data:
         c.homeroom_id = data['homeroom_id'] if data['homeroom_id'] else None
+    if 'city_id' in data:
+        c.city_id = data['city_id'] if data['city_id'] else None
     if 'status' in data:
         c.status = data['status']
     if 'start_date' in data:
@@ -347,16 +371,6 @@ def update(id):
     if warnings:
         result['warnings'] = warnings
     return jsonify(result)
-
-@classes_bp.route('/<int:id>', methods=['DELETE'])
-def delete(id):
-    """删除班级及其课表"""
-    c = Class.query.get_or_404(id)
-    # 先删除课表
-    ClassSchedule.query.filter_by(class_id=id).delete()
-    db.session.delete(c)
-    db.session.commit()
-    return jsonify({'message': '删除成功'})
 
 @classes_bp.route('/<int:id>/regenerate', methods=['POST'])
 def regenerate_schedule(id):
@@ -443,13 +457,86 @@ def _find_best_combo(topic_id, target_date, occupied_teachers):
     return combos[0], 'teacher'
 
 
-def auto_schedule_class(class_obj):
+@classes_bp.route('/<int:id>/add-schedule', methods=['POST'])
+def add_schedule(id):
+    """给班级追加一条排课"""
+    c = Class.query.get_or_404(id)
+    data = request.get_json()
+    
+    topic_id = data.get('topic_id')
+    combo_id = data.get('combo_id')
+    combo_id_2 = data.get('combo_id_2')
+    scheduled_date_str = data.get('scheduled_date')
+    
+    if not topic_id or not scheduled_date_str:
+        return jsonify({'error': '缺少 topic_id 或 scheduled_date'}), 400
+    
+    scheduled_date = date.fromisoformat(scheduled_date_str)
+    
+    # 计算 week_number（当前班级最大课次+1）
+    max_week = db.session.query(func.max(ClassSchedule.week_number)).filter(
+        ClassSchedule.class_id == id
+    ).scalar() or 0
+    
+    schedule = ClassSchedule(
+        class_id=id,
+        topic_id=topic_id,
+        combo_id=combo_id,
+        combo_id_2=combo_id_2,
+        scheduled_date=scheduled_date,
+        week_number=max_week + 1,
+        status='scheduled',
+        has_opening=data.get('has_opening', False),
+        has_team_building=data.get('has_team_building', False),
+        has_closing=data.get('has_closing', False)
+    )
+    db.session.add(schedule)
+    db.session.commit()
+    
+    # 新增课次后重算次序
+    _resequence_topics_by_date(id)
+    schedule = ClassSchedule.query.get(schedule.id)
+    
+    return jsonify(schedule.to_dict()), 201
+
+
+@classes_bp.route('/<int:id>/schedule/<int:sid>', methods=['DELETE'])
+def remove_schedule(id, sid):
+    """删除班级的一条排课"""
+    schedule = ClassSchedule.query.get_or_404(sid)
+    if schedule.class_id != id:
+        return jsonify({'error': '排课记录不属于该班级'}), 400
+    
+    # 清理合班引用
+    ClassSchedule.query.filter(
+        ClassSchedule.merged_with == sid
+    ).update({ClassSchedule.merged_with: None}, synchronize_session='fetch')
+    
+    affected_dates = set()
+    if schedule.scheduled_date:
+        affected_dates.add(schedule.scheduled_date)
+        
+    db.session.delete(schedule)
+    db.session.flush() # Flush to make it effective for _recheck_conflicts
+    
+    _recheck_conflicts_for_dates(affected_dates)
+    db.session.commit()
+    
+    # 删除后重排剩余课题顺序
+    _resequence_topics_by_date(id)
+    
+    return jsonify({'message': '排课记录已删除'})
+
+
+def auto_schedule_class(class_obj, selected_topic_ids=None):
     """
     课程录入排课算法 — 生成完整课表（所有课题）：
     
     从班级的 start_date 开始，按间隔为每个课题分配日期，排完所有课题。
     - 过去的日期 → status='completed'（已经上过的课）
     - 当月及未来 → status='planning'（系统推算的初步安排）
+    
+    可通过 selected_topic_ids 仅排指定课题（灵活课题数支持）。
     
     老师可查看完整课表并手动调整。
     月度「智能排课」会将当月 planning → scheduled（优化后的正式排课）。
@@ -467,7 +554,10 @@ def auto_schedule_class(class_obj):
     from datetime import date as date_type
     
     topics = list(Topic.query.filter_by(project_id=class_obj.project_id)
-                       .order_by(Topic.sequence).all())
+                       .order_by(Topic.id).all())
+    # 灵活课题：如果指定了选中的课题，只排选中的
+    if selected_topic_ids:
+        topics = [t for t in topics if t.id in selected_topic_ids]
     
     if not topics:
         return {'schedules': [], 'total': 0, 'conflict_count': 0, 
@@ -564,7 +654,10 @@ def auto_schedule_class(class_obj):
             week_number=i + 1,
             status=final_status,
             conflict_type=conflict_type if has_conflict else None,
-            notes=note
+            notes=note,
+            has_opening=(i == 0),
+            has_team_building=(i == 0),
+            has_closing=(i == len(topics) - 1)
         )
         schedules.append(schedule)
         

@@ -1,0 +1,10 @@
+Class: 北清EMBA122期 (ID: 1)
+--- Schedule ---
+Date(Sat): 2025-04-12, Topic: 企业数字化变革与数智创新, Day1: None, Day2: 钟彩民-商业模式设计与创新, Flags: ['Day1-Open', 'Day1-TB']
+Date(Sat): 2025-05-24, Topic: 财务管理与风险管理优化, Day1: 王晓耕-公司治理与公司法, Day2: 张庆安-国际形势与宏观经济, Flags: []
+Date(Sat): 2025-06-28, Topic: 宏观经济与企业战略创新, Day1: 岳庆平-中国历代王朝的治乱兴衰, Day2: None, Flags: []
+Date(Sat): 2025-08-09, Topic: 人工智能与商业应用, Day1: 刘春华-AI时代下的新营销九段法, Day2: None, Flags: []
+Date(Sat): 2025-10-18, Topic: 人力资源管理与组织效能提升, Day1: 蔡毅臣-新形势下的战略人力资源管理, Day2: None, Flags: []
+Date(Sat): 2025-12-06, Topic: 销售管理与客户关系经营, Day1: 李继延-创新思维与企业战略, Day2: None, Flags: []
+Date(Sat): 2026-03-21, Topic: 财务管理与风险管理优化, Day1: 吴子敬-股权设计、合伙激励与融资, Day2: None, Flags: []
+Date(Sat): 2026-05-09, Topic: 领导力与团队建设, Day1: 杨波-领导力赋能组织活力, Day2: 程国辉-企业文化从墙上到心上, Flags: []
