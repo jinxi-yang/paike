@@ -1838,6 +1838,28 @@
                     await showAlert('冲突提示', '❌ ' + (result.error || '存在冲突'));
                     return;
                 }
+                // 后端返回冲突警告（200 + conflict_type）：此时修改并未落库，需要用户确认后 force 保存
+                if (result.conflict_type || result.holiday) {
+                    const msg = result.warning || '存在冲突';
+                    const doForce = await showConfirm('⚠️ 冲突警告', msg + '<br><br>是否仍然强制保存？（将标记为冲突状态）');
+                    if (!doForce) return;
+                    // 带 force=true 重新提交
+                    payload.force = true;
+                    const resp2 = await fetch(`${API_BASE}/schedule/adjust`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result2 = await resp2.json();
+                    if (!resp2.ok) {
+                        showToast('保存失败: ' + (result2.error || '未知错误'), 'error');
+                        return;
+                    }
+                    showToast('✅ 已强制保存（冲突状态）', 'success');
+                    loadMonthSchedule();
+                    if (currentClassId) openClassScheduleModal(currentClassId);
+                    return;
+                }
                 if (result.warning) {
                     showToast('⚠️ ' + result.warning, 'warning');
                 }

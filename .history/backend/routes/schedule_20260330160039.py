@@ -645,49 +645,41 @@ def adjust_schedule():
                     }), 200
             
             # 检查讲师冲突（如果已分配教-课组合，考虑两天）
-            # ★ 关键：如果用户同时提交了新combo，应该用新combo检查冲突，而不是旧的！
-            #   否则用户想通过换讲师来解除冲突，但后端还在用旧讲师检查，永远报冲突。
-            check_combo1_id = data.get('combo_id', schedule.combo_id)
-            check_combo2_id = data.get('combo_id_2', schedule.combo_id_2)
-            
-            if check_combo1_id:
-                check_combo1 = TeacherCourseCombo.query.get(check_combo1_id)
-                if check_combo1 and check_combo1.teacher_id:
-                    teacher_id = check_combo1.teacher_id
-                    # 周六讲师只与其他记录的周六讲师(combo_id)比较
-                    teacher_conflicts = ClassSchedule.query.join(
-                        TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
-                    ).filter(
-                        TeacherCourseCombo.teacher_id == teacher_id,
-                        ClassSchedule.scheduled_date == new_date,
-                        ClassSchedule.id != schedule_id
-                    ).all()
+            # 讲师冲突检查：combo_id=周六讲师, combo_id_2=周日讲师，不同天应分别检查
+            if schedule.combo_id and schedule.combo:
+                teacher_id = schedule.combo.teacher_id
+                # 周六讲师只与其他记录的周六讲师(combo_id)比较
+                teacher_conflicts = ClassSchedule.query.join(
+                    TeacherCourseCombo, ClassSchedule.combo_id == TeacherCourseCombo.id
+                ).filter(
+                    TeacherCourseCombo.teacher_id == teacher_id,
+                    ClassSchedule.scheduled_date == new_date,
+                    ClassSchedule.id != schedule_id
+                ).all()
 
-                    if teacher_conflicts:
-                        return jsonify({
-                            'warning': f'讲师 {check_combo1.teacher.name} 在该周六已有其他课程',
-                            'conflict_type': 'teacher',
-                            'conflicts': [c.to_dict() for c in teacher_conflicts],
-                            'proceed': True
-                        }), 200
-            if check_combo2_id:
-                check_combo2 = TeacherCourseCombo.query.get(check_combo2_id)
-                if check_combo2 and check_combo2.teacher_id:
-                    teacher2_id = check_combo2.teacher_id
-                    # 周日讲师只与其他记录的周日讲师(combo_id_2)比较
-                    teacher_conflicts2 = ClassSchedule.query.filter(
-                        ClassSchedule.combo_id_2.isnot(None),
-                        ClassSchedule.scheduled_date == new_date,
-                        ClassSchedule.id != schedule_id
-                    ).all()
-                    teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == teacher2_id]
-                    if teacher_conflicts2:
-                        return jsonify({
-                            'warning': f'讲师 {check_combo2.teacher.name} 在该周日已有其他课程',
-                            'conflict_type': 'teacher',
-                            'conflicts': [c.to_dict() for c in teacher_conflicts2],
-                            'proceed': True
-                        }), 200
+                if teacher_conflicts:
+                    return jsonify({
+                        'warning': f'讲师 {schedule.combo.teacher.name} 在该周六已有其他课程',
+                        'conflict_type': 'teacher',
+                        'conflicts': [c.to_dict() for c in teacher_conflicts],
+                        'proceed': True
+                    }), 200
+            if schedule.combo_id_2 and schedule.combo_2:
+                teacher2_id = schedule.combo_2.teacher_id
+                # 周日讲师只与其他记录的周日讲师(combo_id_2)比较
+                teacher_conflicts2 = ClassSchedule.query.filter(
+                    ClassSchedule.combo_id_2.isnot(None),
+                    ClassSchedule.scheduled_date == new_date,
+                    ClassSchedule.id != schedule_id
+                ).all()
+                teacher_conflicts2 = [s for s in teacher_conflicts2 if s.combo_2 and s.combo_2.teacher_id == teacher2_id]
+                if teacher_conflicts2:
+                    return jsonify({
+                        'warning': f'讲师 {schedule.combo_2.teacher.name} 在该周日已有其他课程',
+                        'conflict_type': 'teacher',
+                        'conflicts': [c.to_dict() for c in teacher_conflicts2],
+                        'proceed': True
+                    }), 200
             
             # optional: 如果必要，还可检查新星期天是否是节假日
             sun_date = new_date + timedelta(days=1)
@@ -3225,7 +3217,6 @@ def _precompute_class_data(year, month, constraints, **kwargs):
             'user_locked_combo': user_locked_combo,
             'combos_list': combos_list,
             'skip_reason': skip_reason,
-            'original_date': s.scheduled_date, # 记录原始档期亲和力用
             'original_schedule_id': s.id,  # 用于 UPDATE 时定位原记录
         })
 
@@ -3296,9 +3287,6 @@ def _precompute_class_data(year, month, constraints, **kwargs):
                     'topic_name': s.topic.name if s.topic else '未知',
                 })
 
-    # 构建原档期字典，用于计算排课亲和力
-    original_dates = {info['cls'].id: info['original_date'] for info in class_infos if info.get('original_date')}
-
     return {
         'class_infos': class_infos,
         'candidate_saturdays': candidate_saturdays,
@@ -3306,7 +3294,6 @@ def _precompute_class_data(year, month, constraints, **kwargs):
         'merged_class_set': merged_class_set,
         'start_date': start_date,
         'end_date': end_date,
-        'original_dates': original_dates,
         # 性能优化索引
         'homeroom_by_date': dict(homeroom_by_date),
         'teacher_day1_by_date': dict(teacher_day1_by_date),

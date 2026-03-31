@@ -38,6 +38,7 @@ rsync -avz --progress \
     --exclude 'scheduler.db.*'      \
     --exclude 'deploy/logs/'        \
     --exclude 'deploy/*.pid'        \
+    --exclude 'venv/'               \
     "$PROJECT_ROOT/" "$USER@$SERVER:$REMOTE_DIR/"
 
 # 3. 远程安装依赖 + 启动

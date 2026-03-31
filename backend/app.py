@@ -8,9 +8,10 @@ from models import db
 import os
 import logging
 
-# 配置日志 - 确保控制台能看到所有日志
+# 配置日志 - 生产环境默认 INFO，设置环境变量可切换
+_log_level = os.environ.get('LOG_LEVEL', 'DEBUG' if os.environ.get('FLASK_DEBUG') else 'INFO').upper()
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=getattr(logging, _log_level, logging.INFO),
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
