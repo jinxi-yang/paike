@@ -25,6 +25,19 @@ def get_task_status(task_id):
     return jsonify(task)
 
 
+@schedule_bp.route('/task-cancel/<task_id>', methods=['POST'])
+def cancel_task(task_id):
+    """取消正在运行的排课任务"""
+    task = _task_store.get(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+    if task['status'] != 'running':
+        return jsonify({'message': '任务已结束，无需取消'})
+    task['cancelled'] = True
+    task['progress'] = '正在取消...'
+    return jsonify({'message': '取消请求已发送'})
+
+
 def _month_range(year, month):
     start_date = date(year, month, 1)
     if month == 12:
@@ -2070,15 +2083,25 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
     """
     from itertools import product as iter_product
     
-    # 收集讲师请假约束
+    # 收集讲师请假约束（标准键名为 teacher_unavailable，格式为 {teacher_name, dates}）
     teacher_leave = set()  # {(teacher_id, date_str)}
-    leave_list = constraints.get('teacher_leave', [])
+    leave_list = constraints.get('teacher_unavailable', [])
     if isinstance(leave_list, list):
+        from models import Teacher
+        # 建立 name→id 映射以适配 teacher_unavailable 的 name-based 格式
+        _teacher_name_to_id = {}
         for item in leave_list:
             if isinstance(item, dict):
-                tid = item.get('teacher_id')
-                for d in item.get('dates', []):
-                    teacher_leave.add((tid, d))
+                t_name = item.get('teacher_name')
+                tid = item.get('teacher_id')  # 兼容旧格式
+                if t_name and not tid:
+                    if t_name not in _teacher_name_to_id:
+                        t_obj = Teacher.query.filter_by(name=t_name).first()
+                        _teacher_name_to_id[t_name] = t_obj.id if t_obj else None
+                    tid = _teacher_name_to_id[t_name]
+                if tid:
+                    for d in item.get('dates', []):
+                        teacher_leave.add((tid, d))
     
     # 预加载所有需要的组合数据（从 precomputed 或 DB）
     topic_ids = set(a.get('topic_id') for a in assignments if a.get('topic_id'))
@@ -2467,7 +2490,8 @@ def _score_candidate(cls, sat, last_date, combo1, combo2, assigned_map, constrai
                     conflict_reasons.append(f'班主任撞课({a_name})[本轮]')
 
     # --- H7: 班主任请假（硬约束：直接跳过该日期） ---
-    if cls.homeroom_id and not homeroom_conflict:
+    # 注意：不再受 homeroom_conflict(H3) 遮蔽，始终独立检查
+    if cls.homeroom_id:
         hrm_reason = _check_homeroom_unavailable(cls, sat, constraints)
         if hrm_reason:
             conflict_reasons.append(hrm_reason)
@@ -3047,6 +3071,10 @@ def _run_best_of_n(year, month, constraints, n_rounds=30, task_id=None, **kwargs
     import copy
 
     for i in range(n_rounds):
+        # 检查是否被取消
+        if task_id and task_id in _task_store and _task_store[task_id].get('cancelled'):
+            _update_progress(f'排课已取消（完成{i}/{n_rounds}轮）')
+            break
         seed = None if i == 0 else random.randint(1, 999999)
         _update_progress(f'第{i+1}/{n_rounds}轮排课中... 当前最优: {best_score}分/{best_conflicts}个冲突')
         assignments, quality = _run_scheduling_algorithm(
@@ -3816,6 +3844,14 @@ def generate_schedule_preview():
                     combo_overrides=co_raw,
                     month_schedules=month_schedules
                 )
+
+                # 检查是否被取消
+                if _task_store[task_id].get('cancelled'):
+                    _task_store[task_id] = {
+                        'status': 'error', 'progress': '已取消',
+                        'result': None, 'error': '排课任务已被用户取消'
+                    }
+                    return
 
                 _task_store[task_id]['progress'] = '正在处理合班信息...'
                 for m in merges_list:

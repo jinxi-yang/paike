@@ -1053,23 +1053,22 @@
                 <div id="manage-panel-project" class="manage-panel absolute inset-0 flex-col flex-1 bg-white z-10" style="display: none;">
                     <div class="p-4 border-b bg-slate-50 text-slate-700 flex items-center justify-between">
                         <h3 class="font-bold flex items-center gap-2">📦 项目管理</h3>
-                        <span id="project-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
-                    </div>
-                    <div id="projects-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-slate-50/50"></div>
-                    <div class="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
-                        <input id="new-project-name" placeholder="项目名称 *" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all">
-                        <div class="flex gap-3">
-                            <input id="new-project-desc" placeholder="项目描述（选填）" class="flex-1 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all">
-                            <button onclick="addProject()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap">添加项目</button>
+                        <div class="flex items-center gap-3">
+                            <span id="project-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                            <button onclick="openAddProjectModal()" class="admin-only px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增项目</button>
                         </div>
                     </div>
+                    <div id="projects-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-slate-50/50"></div>
                 </div>
 
                 <!-- 课题管理 -->
                 <div id="manage-panel-topic" class="manage-panel absolute inset-0 flex-col flex-1 bg-white z-10" style="display: none;">
                     <div class="p-4 border-b bg-slate-50 text-slate-700 flex items-center justify-between">
                         <h3 class="font-bold flex items-center gap-2">📋 课题管理</h3>
-                        <span id="topic-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                        <div class="flex items-center gap-3">
+                            <span id="topic-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                            <button onclick="openAddTopicModal()" class="admin-only px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增课题</button>
+                        </div>
                     </div>
                     <div class="p-3 border-b bg-white">
                         <select id="topic-project-filter" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all" onchange="loadTopics()">
@@ -1077,18 +1076,6 @@
                         </select>
                     </div>
                     <div id="topics-manage-list" class="flex-1 p-6 overflow-y-auto space-y-4 bg-slate-50/50"></div>
-                    <div class="p-4 border-t bg-white flex flex-col gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
-                        <div class="flex gap-3">
-                            <input id="new-topic-name" placeholder="课题名称 *" class="flex-1 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <input id="new-topic-seq" placeholder="序号" class="w-20 text-sm p-2.5 border border-slate-200 rounded-xl text-center focus:ring-2 focus:ring-blue-100 outline-none transition-all" type="number" min="1" max="99">
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-                                <input type="checkbox" id="new-topic-fixed" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"> 固定课题 (首尾)
-                            </label>
-                            <button onclick="addTopic()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加课题</button>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- 班主任管理 -->
@@ -1098,17 +1085,10 @@
                         <div class="flex items-center gap-3">
                             <input id="homeroom-search" oninput="setHomeroomPage(1)" placeholder="搜索班主任..." class="text-sm p-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 outline-none transition-all w-48">
                             <span id="homeroom-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                            <button onclick="openAddHomeroomModal()" class="admin-only px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增班主任</button>
                         </div>
                     </div>
                     <div id="homerooms-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-slate-50/50"></div>
-                    <div class="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
-                        <input id="new-homeroom-name" placeholder="班主任姓名 *" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                        <div class="flex gap-3">
-                            <input id="new-homeroom-phone" placeholder="联系电话 (选填)" class="flex-1 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <input id="new-homeroom-email" placeholder="邮箱 (选填)" class="flex-1 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <button onclick="addHomeroom()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap">添加班主任</button>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- 讲师管理 -->
@@ -1118,38 +1098,22 @@
                         <div class="flex items-center gap-3">
                             <input id="teacher-search" oninput="setTeacherPage(1)" placeholder="搜索讲师/课题..." class="text-sm p-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-100 outline-none transition-all w-48">
                             <span id="teacher-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                            <button onclick="openAddTeacherModal()" class="admin-only px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增讲师</button>
                         </div>
                     </div>
-
                     <div id="teachers-list" class="flex-1 p-6 overflow-y-auto space-y-4 bg-slate-50/50"></div>
-                    <div class="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
-                        <div class="flex gap-3">
-                            <input id="new-teacher-name" placeholder="讲师姓名 *" class="w-1/3 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <input id="new-teacher-phone" placeholder="联系电话" class="w-1/3 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                        </div>
-                        <div class="flex gap-3">
-                            <div class="flex-1 flex flex-wrap gap-2 items-center p-2 border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-blue-100 bg-white cursor-text transition-all min-h-[42px]" onclick="document.getElementById('new-course-input').focus()" id="new-course-tags-container">
-                                <input id="new-course-input" placeholder="输入课程名称敲回车添加..." class="flex-1 min-w-[150px] outline-none text-sm bg-transparent" onkeydown="if(event.key==='Enter') { event.preventDefault(); addNewCourseTag(); }">
-                            </div>
-                            <button onclick="addTeacher()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap">添加讲师与课程</button>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- 城市管理 -->
                 <div id="manage-panel-city" class="manage-panel absolute inset-0 flex-col flex-1 bg-white z-10" style="display: none;">
                     <div class="p-4 border-b bg-slate-50 text-slate-700 flex items-center justify-between">
                         <h3 class="font-bold flex items-center gap-2">🏙️ 城市容纳配置</h3>
-                        <span id="city-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
-                    </div>
-                    <div id="cities-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-slate-50/50"></div>
-                    <div class="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
-                        <div class="flex gap-3">
-                            <input id="new-city-name" placeholder="城市名称 *" class="flex-1 text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <input id="new-city-rooms" placeholder="最大并行教室数 (默认7)" type="number" min="1" max="99" class="w-48 text-sm p-2.5 border border-slate-200 rounded-xl text-center focus:ring-2 focus:ring-blue-100 outline-none transition-all">
-                            <button onclick="addCity()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap">添加城市</button>
+                        <div class="flex items-center gap-3">
+                            <span id="city-count" class="text-xs text-slate-500 font-semibold bg-white px-2 py-1 rounded shadow-sm border border-slate-100"></span>
+                            <button onclick="openAddCityModal()" class="admin-only px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 新增城市</button>
                         </div>
                     </div>
+                    <div id="cities-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-slate-50/50"></div>
                 </div>
             </div>
         </div>
@@ -1249,6 +1213,150 @@
             </div>
         </div>
     </main>
+
+    <!-- ========== 资源配置：新增项目弹窗 ========== -->
+    <div id="add-project-modal" class="modal-overlay" onclick="if(event.target===this) closeAddProjectModal()">
+        <div class="modal-content glass-card w-[480px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold flex items-center gap-2"><i data-lucide="plus" class="w-5 h-5"></i> 新增项目</h3>
+                <button onclick="closeAddProjectModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4 flex-1 overflow-y-auto">
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">项目名称 <span class="text-red-400">*</span></label>
+                    <input id="new-project-name" placeholder="请输入项目名称" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">项目描述（选填）</label>
+                    <input id="new-project-desc" placeholder="请输入项目描述" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all">
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="closeAddProjectModal()" class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">取消</button>
+                <button onclick="addProject()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加项目</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 资源配置：新增课题弹窗 ========== -->
+    <div id="add-topic-modal" class="modal-overlay" onclick="if(event.target===this) closeAddTopicModal()">
+        <div class="modal-content glass-card w-[480px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold flex items-center gap-2"><i data-lucide="plus" class="w-5 h-5"></i> 新增课题</h3>
+                <button onclick="closeAddTopicModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4 flex-1 overflow-y-auto">
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">所属项目</label>
+                    <div id="add-topic-project-hint" class="text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-500">请先在课题管理中选择项目</div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">课题名称 <span class="text-red-400">*</span></label>
+                    <input id="new-topic-name" placeholder="请输入课题名称" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-xs font-bold text-slate-600 mb-1 block">序号</label>
+                        <input id="new-topic-seq" placeholder="自动分配" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl text-center focus:ring-2 focus:ring-blue-100 outline-none transition-all" type="number" min="1" max="99">
+                    </div>
+                    <div class="flex-1 flex items-end pb-1">
+                        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                            <input type="checkbox" id="new-topic-fixed" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"> 固定课题 (首尾)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="closeAddTopicModal()" class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">取消</button>
+                <button onclick="addTopic()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加课题</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 资源配置：新增班主任弹窗 ========== -->
+    <div id="add-homeroom-modal" class="modal-overlay" onclick="if(event.target===this) closeAddHomeroomModal()">
+        <div class="modal-content glass-card w-[480px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold flex items-center gap-2"><i data-lucide="plus" class="w-5 h-5"></i> 新增班主任</h3>
+                <button onclick="closeAddHomeroomModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4 flex-1 overflow-y-auto">
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">姓名 <span class="text-red-400">*</span></label>
+                    <input id="new-homeroom-name" placeholder="请输入班主任姓名" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">联系电话（选填）</label>
+                    <input id="new-homeroom-phone" placeholder="请输入联系电话" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">邮箱（选填）</label>
+                    <input id="new-homeroom-email" placeholder="请输入邮箱地址" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="closeAddHomeroomModal()" class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">取消</button>
+                <button onclick="addHomeroom()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加班主任</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 资源配置：新增讲师弹窗 ========== -->
+    <div id="add-teacher-modal" class="modal-overlay" onclick="if(event.target===this) closeAddTeacherModal()">
+        <div class="modal-content glass-card w-[520px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold flex items-center gap-2"><i data-lucide="plus" class="w-5 h-5"></i> 新增讲师与课程</h3>
+                <button onclick="closeAddTeacherModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4 flex-1 overflow-y-auto">
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-xs font-bold text-slate-600 mb-1 block">讲师姓名 <span class="text-red-400">*</span></label>
+                        <input id="new-teacher-name" placeholder="请输入讲师姓名" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs font-bold text-slate-600 mb-1 block">联系电话</label>
+                        <input id="new-teacher-phone" placeholder="请输入联系电话" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">课程名称</label>
+                    <div class="flex-1 flex flex-wrap gap-2 items-center p-2.5 border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-blue-100 bg-white cursor-text transition-all min-h-[42px]" onclick="document.getElementById('new-course-input').focus()" id="new-course-tags-container">
+                        <input id="new-course-input" placeholder="输入课程名称敲回车添加..." class="flex-1 min-w-[150px] outline-none text-sm bg-transparent" onkeydown="if(event.key==='Enter') { event.preventDefault(); addNewCourseTag(); }">
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">输入课程名称后敲回车，可添加多个课程</p>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="closeAddTeacherModal()" class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">取消</button>
+                <button onclick="addTeacher()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加讲师与课程</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 资源配置：新增城市弹窗 ========== -->
+    <div id="add-city-modal" class="modal-overlay" onclick="if(event.target===this) closeAddCityModal()">
+        <div class="modal-content glass-card w-[480px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold flex items-center gap-2"><i data-lucide="plus" class="w-5 h-5"></i> 新增城市</h3>
+                <button onclick="closeAddCityModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4 flex-1 overflow-y-auto">
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">城市名称 <span class="text-red-400">*</span></label>
+                    <input id="new-city-name" placeholder="请输入城市名称" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600 mb-1 block">最大并行教室数</label>
+                    <input id="new-city-rooms" placeholder="默认 7" type="number" min="1" max="99" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl text-center focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
+                <button onclick="closeAddCityModal()" class="px-4 py-2 rounded-xl border bg-white text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">取消</button>
+                <button onclick="addCity()" class="px-6 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-md shadow-blue-500/20 hover:bg-blue-700 active:scale-95 transition-all">添加城市</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 培训班详情弹窗 -->
     <div id="training-detail-modal" class="modal-overlay" onclick="if(event.target==this) closeTrainingDetail()">
@@ -1924,6 +2032,7 @@
             checkConnection();
             loadTrainingTypes();
             loadMonthSchedule();
+            loadConstraints();  // 独立加载约束列表，不等待排课数据
             initClassPrecheckEvents();
         }
 
@@ -1985,14 +2094,7 @@
         function applyViewerRestrictions() {
             if (!_currentUser || _currentUser.role === 'admin') return;
 
-            // 为资源配置面板中的添加区域标记 admin-only
-            // 管理面板底部的添加表单区域
-            document.querySelectorAll('#view-manage .border-t').forEach(el => {
-                // 含有 input 或 button[onclick*="add"] 的 border-t 区域即为添加表单
-                if (el.querySelector('button[onclick*="add" i]') || el.querySelector('button[onclick*="Add" i]')) {
-                    el.classList.add('admin-only');
-                }
-            });
+            // 资源配置面板中的新增按钮已直接标记 admin-only class，无需额外处理
 
             // 排课看板中的操作按钮
             const smartGenBtn = document.getElementById('smart-generate-btn');
@@ -2041,6 +2143,52 @@
             if (tabId === 'homeroom' && window.loadHomerooms) loadHomerooms();
             if (tabId === 'teacher' && window.loadTeachers) loadTeachers();
             if (tabId === 'city' && window.loadCities) loadCities();
+        }
+
+        // ==================== 资源配置：新增弹窗 open/close ====================
+        function openAddProjectModal() {
+            document.getElementById('add-project-modal').classList.add('active');
+            if (window.lucide) lucide.createIcons();
+        }
+        function closeAddProjectModal() {
+            document.getElementById('add-project-modal').classList.remove('active');
+        }
+
+        function openAddTopicModal() {
+            const pid = document.getElementById('topic-project-filter')?.value;
+            if (!pid) { showToast('请先在课题管理中选择项目', 'warning'); return; }
+            const sel = document.getElementById('topic-project-filter');
+            const hint = document.getElementById('add-topic-project-hint');
+            if (hint && sel) hint.textContent = sel.options[sel.selectedIndex]?.text || '';
+            document.getElementById('add-topic-modal').classList.add('active');
+            if (window.lucide) lucide.createIcons();
+        }
+        function closeAddTopicModal() {
+            document.getElementById('add-topic-modal').classList.remove('active');
+        }
+
+        function openAddHomeroomModal() {
+            document.getElementById('add-homeroom-modal').classList.add('active');
+            if (window.lucide) lucide.createIcons();
+        }
+        function closeAddHomeroomModal() {
+            document.getElementById('add-homeroom-modal').classList.remove('active');
+        }
+
+        function openAddTeacherModal() {
+            document.getElementById('add-teacher-modal').classList.add('active');
+            if (window.lucide) lucide.createIcons();
+        }
+        function closeAddTeacherModal() {
+            document.getElementById('add-teacher-modal').classList.remove('active');
+        }
+
+        function openAddCityModal() {
+            document.getElementById('add-city-modal').classList.add('active');
+            if (window.lucide) lucide.createIcons();
+        }
+        function closeAddCityModal() {
+            document.getElementById('add-city-modal').classList.remove('active');
         }
 
                 async function renderClassTopicsChecklist(projectId, containerId) {
@@ -3491,6 +3639,8 @@
                 loadConstraints();
             } catch (e) {
                 document.getElementById('schedule-container').innerHTML = '<div class="text-center text-slate-400 p-8">加载失败，请检查后端服务</div>';
+                // 即使排课数据加载失败，仍加载约束列表
+                loadConstraints();
             }
         }
 
@@ -5247,15 +5397,33 @@
 
             // 锁定整个页面，防止用户误操作
             let overlay = document.getElementById('schedule-loading-overlay');
+            let _schedulePollInterval = null;  // 用于取消轮询
+            let _currentTaskId = null;  // 当前排课任务ID
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = 'schedule-loading-overlay';
                 overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:12px;backdrop-filter:blur(3px);';
-                overlay.innerHTML = '<span class="loading" style="width:40px;height:40px;"></span><span id="schedule-loading-text" style="font-size:15px;color:#334155;font-weight:600;">正在智能排课...</span><span style="font-size:12px;color:#94a3b8;">请稍候，算法正在计算最优方案</span>';
                 document.body.appendChild(overlay);
-            } else {
-                overlay.style.display = 'flex';
             }
+            overlay.style.display = 'flex';
+            overlay.innerHTML = '<span class="loading" style="width:40px;height:40px;"></span><span id="schedule-loading-text" style="font-size:15px;color:#334155;font-weight:600;">正在智能排课...</span><span style="font-size:12px;color:#94a3b8;">请稍候，算法正在计算最优方案</span><button id="schedule-cancel-btn" style="margin-top:16px;padding:8px 24px;background:#ef4444;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;opacity:0;transition:opacity 0.3s;">取消排课</button>';
+            // 3秒后显示取消按钮（避免误点）
+            setTimeout(() => {
+                const cancelBtn = document.getElementById('schedule-cancel-btn');
+                if (cancelBtn) cancelBtn.style.opacity = '1';
+            }, 3000);
+            document.getElementById('schedule-cancel-btn').onclick = async function() {
+                if (_schedulePollInterval) clearInterval(_schedulePollInterval);
+                // 通知后端取消任务
+                if (_currentTaskId) {
+                    try { await fetch(`${API_BASE}/schedule/task-cancel/${_currentTaskId}`, { method: 'POST' }); } catch(e) {}
+                }
+                overlay.style.display = 'none';
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="sparkles" class="w-4 h-4"></i> 🔄 智能排课';
+                lucide.createIcons();
+                showToast('排课任务已取消', 'warning');
+            };
 
             const resultBox = document.getElementById('constraints-result');
             resultBox.classList.add('hidden');
@@ -5305,6 +5473,13 @@
                         }
                         document.getElementById('constraints-content').innerHTML = html || '未识别到具体约束，将按默认规则排课。';
                         resultBox.classList.remove('hidden');
+                    } else {
+                        // AI调用失败，显示错误反馈，但不阻止排课继续
+                        let errMsg = 'AI约束提取失败';
+                        try { const errData = await resp.json(); errMsg = errData.error || errMsg; } catch(e) {}
+                        document.getElementById('constraints-content').innerHTML = `<div class="text-red-600">⚠️ ${errMsg}</div><div class="text-slate-500 mt-1">约束未生效，将按无约束模式排课。请检查AI智能体配置。</div>`;
+                        resultBox.classList.remove('hidden');
+                        console.error('AI constraint extraction failed:', resp.status);
                     }
                 }
 
@@ -5334,6 +5509,7 @@
                     throw new Error(errData.error || '排课启动失败');
                 }
                 const { task_id } = await submitResp.json();
+                _currentTaskId = task_id;  // 存储以便取消按钮使用
 
                 // 3. 轮询任务状态
                 btn.innerHTML = '<span class="loading"></span> 排课进行中...';
@@ -5363,6 +5539,13 @@
                             reject(pollErr);
                         }
                     }, 2000); // 每2秒轮询
+                    // 让取消按钮能停止轮询
+                    _schedulePollInterval = pollInterval;
+                    // 3分钟超时保护，防止无限等待
+                    setTimeout(() => {
+                        clearInterval(pollInterval);
+                        reject(new Error('排课超时（3分钟），请重试'));
+                    }, 180000);
                 });
 
                 // 4. 打开预览弹窗
@@ -5425,6 +5608,7 @@
             const resp = await fetch(`${API_BASE}/homerooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, email }) });
             if (resp.ok) {
                 ['new-homeroom-name', 'new-homeroom-phone', 'new-homeroom-email'].forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; el.style.borderColor = ''; } });
+                closeAddHomeroomModal();
                 loadHomerooms();
                 showToast('班主任已添加');
             } else { const err = await resp.json(); showToast(err.error || '添加失败', 'error'); }
@@ -5493,7 +5677,7 @@
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, max_classrooms: rooms })
             });
-            if (resp.ok) { document.getElementById('new-city-name').value = ''; loadCities(); showToast('城市已添加'); }
+            if (resp.ok) { document.getElementById('new-city-name').value = ''; document.getElementById('new-city-rooms').value = ''; closeAddCityModal(); loadCities(); showToast('城市已添加'); }
             else { const err = await resp.json(); showToast(err.error || '添加失败', 'error'); }
         }
 
@@ -5694,6 +5878,7 @@
                     document.getElementById('new-teacher-phone').value = '';
                     document.querySelectorAll('.new-course-tag').forEach(el => el.remove());
                     document.getElementById('new-course-input').value = '';
+                    closeAddTeacherModal();
                     loadTeachers();
                 } else {
                     const err = await resp.json();
@@ -5826,6 +6011,7 @@
             });
             if (resp.ok) {
                 ['new-project-name', 'new-project-desc'].forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; el.style.borderColor = ''; } });
+                closeAddProjectModal();
                 loadManageProjects();
                 loadTrainingTypes();
                 showToast('项目已添加');
@@ -6358,6 +6544,7 @@
                 document.getElementById('new-topic-name').style.borderColor = '';
                 document.getElementById('new-topic-seq').value = '';
                 document.getElementById('new-topic-fixed').checked = false;
+                closeAddTopicModal();
                 loadTopics();
                 showToast('课题已添加');
             } else { const err = await resp.json(); showToast(err.error || '添加失败', 'error'); }
