@@ -9,23 +9,23 @@ import json
 
 ai_bp = Blueprint('ai', __name__)
 
-@ai_bp.route('/extract-constraints', methods=['POST'])
-def extract_constraints():
-    """
-    接收用户提示词，转发给外部AI智能体提取约束参数
-    适配 Dify/Isstech Agent API 格式
-    """
-    data = request.get_json()
-    prompt = data.get('prompt', '').strip()
-    context = data.get('context', {})
-    
-    # 优化：如果提示词为空，直接返回空约束，不调用AI
-    if not prompt:
-        return jsonify({
-            'constraints': {}
-        })
 
+def call_ai_extract(prompt, context):
+    """
+    核心AI约束提取函数（可被其他模块导入调用）。
     
+    Args:
+        prompt: 用户输入的自然语言约束描述
+        context: 排课上下文 dict，含 current_month, classes, teachers, homeroom_teachers
+    
+    Returns:
+        (constraints_dict, error_string):
+            成功时 constraints_dict 为解析后的约束字典，error_string 为 None
+            失败时 constraints_dict 为 None，error_string 为错误信息
+    """
+    if not prompt or not prompt.strip():
+        return {}, None
+
     # 构造组合Prompt
     full_query = f"""
     【用户指令】
@@ -40,13 +40,13 @@ def extract_constraints():
     请根据上述信息提取排课约束，Strictly return VALID JSON ONLY.
     
     【实体识别规则】
-    1. 当用户输入名字（如“王芳”）未明确指明身份时：
+    1. 当用户输入名字（如"王芳"）未明确指明身份时：
        - 优先在 [讲师名单] 和 [班主任名单] 中查找匹配项。
        - 如果只在 [讲师名单] 中，归为 `teacher_unavailable`。
        - 如果只在 [班主任名单] 中，归为 `homeroom_unavailable`。
     2. 如果名字同时出现在两个名单中：
-       - 若用户指定了“班主任王芳”，则归为 `homeroom_unavailable`。
-       - 若用户指定了“老师王芳”或未指定，优先视为讲师，归为 `teacher_unavailable`（除非上下文强烈暗示是班主任工作）。
+       - 若用户指定了"班主任王芳"，则归为 `homeroom_unavailable`。
+       - 若用户指定了"老师王芳"或未指定，优先视为讲师，归为 `teacher_unavailable`（除非上下文强烈暗示是班主任工作）。
     """
 
     ai_url = Config.AI_AGENT_URL
@@ -61,17 +61,13 @@ def extract_constraints():
             "Content-Type": "application/json"
         }
         
-        # 构造 Payload
-        # 为了兼容 Dify Workflow 和 Chat App：
-        # 1. query: 包含拼接好的完整提示词 (Chat App 默认读取此字段)
-        # 2. inputs: 包含结构化的上下文变量 (Workflow 可通过引用变量使用)
         payload = {
             "inputs": {
                 "current_month": context.get('current_month', ''),
                 "classes": json.dumps(context.get('classes', []), ensure_ascii=False),
                 "teachers": json.dumps(context.get('teachers', []), ensure_ascii=False),
                 "homeroom_teachers": json.dumps(context.get('homeroom_teachers', []), ensure_ascii=False),
-                "raw_context": json.dumps(context, ensure_ascii=False) # 完整上下文
+                "raw_context": json.dumps(context, ensure_ascii=False)
             },
             "query": full_query,
             "response_mode": "blocking",
@@ -79,13 +75,11 @@ def extract_constraints():
             "user": "scheduler-system-user"
         }
         
-        # DEBUG: 打印发送给智能体的完整Payload
         print("\n\n=== AI DEBUG: REQUEST ===")
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         
         resp = requests.post(ai_url, json=payload, headers=headers, timeout=60)
         
-        # DEBUG: 打印智能体返回的原始内容
         print("\n=== AI DEBUG: RESPONSE HEADERS ===")
         print(resp.headers)
         print("\n=== AI DEBUG: RESPONSE BODY ===")
@@ -93,15 +87,9 @@ def extract_constraints():
         print("=== END AI DEBUG ===\n")
         
         if resp.status_code != 200:
-            return jsonify({
-                'success': False, 
-                'error': f'AI API Error: {resp.status_code} {resp.text}',
-                'debug_info': 'Check console logs for details'
-            }), 500
+            return None, f'AI API Error: {resp.status_code} {resp.text}'
             
         resp_data = resp.json()
-        
-        # 解析 Dify 格式响应 (answer 字段包含实际文本)
         ai_text = resp_data.get('answer', '')
         
         # 尝试从文本中提取JSON（增强：多种格式兼容）
@@ -118,7 +106,6 @@ def extract_constraints():
             
         if json_match:
             json_str = json_match.group(1)
-            # 修复常见JSON问题：移除尾随逗号
             json_str = re.sub(r',\s*([\]}])', r'\1', json_str)
             try:
                 constraints = json.loads(json_str)
@@ -133,25 +120,15 @@ def extract_constraints():
                 pass
         
         if constraints is not None:
-            # 确保返回结构包含 constraints 字段
-            if 'constraints' not in constraints:
-                constraints = {'constraints': constraints}
-            return jsonify(constraints)
+            if 'constraints' in constraints:
+                constraints = constraints['constraints']
+            return constraints, None
         else:
-            return jsonify({
-                'success': False, 
-                'error': '无法解析AI返回的约束条件', 
-                'raw_response': ai_text[:500]
-            }), 500
+            return None, f'无法解析AI返回的约束条件: {ai_text[:200]}'
 
     except Exception as e:
-        # Fallback 仅用于调试，实际应报错
         print(f"AI Error: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'fallback': True
-        }), 500
+        return None, str(e)
 
 
 @ai_bp.route('/config', methods=['GET'])

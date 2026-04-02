@@ -226,6 +226,7 @@ class ClassSchedule(db.Model):
     merged_with = db.Column(db.Integer, comment='合班标识(指向主课表ID)')
     merge_snapshot = db.Column(db.Text, comment='合班前快照(JSON): 保存合班前的原始日期和组合，拆分时恢复')
     homeroom_override_id = db.Column(db.Integer, db.ForeignKey('homeroom.id'), comment='本次排课临时班主任(覆盖班级默认班主任)')
+    location_id = db.Column(db.Integer, db.ForeignKey('city.id'), comment='本次上课地点(覆盖班级默认地点，为空则用班级默认)')
     has_opening = db.Column(db.Boolean, default=False, comment='(周六)开学典礼')
     has_team_building = db.Column(db.Boolean, default=False, comment='(周六)团建')
     has_closing = db.Column(db.Boolean, default=False, comment='(周六)结业典礼')
@@ -239,6 +240,7 @@ class ClassSchedule(db.Model):
     combo = db.relationship('TeacherCourseCombo', foreign_keys=[combo_id], backref=db.backref('schedules', lazy='dynamic'))
     combo_2 = db.relationship('TeacherCourseCombo', foreign_keys=[combo_id_2], backref=db.backref('secondary_schedules', lazy='dynamic'))
     homeroom_override = db.relationship('Homeroom', foreign_keys=[homeroom_override_id])
+    location = db.relationship('City', foreign_keys=[location_id])
 
     def to_dict(self):
         topic_name = self.topic.name if self.topic else None
@@ -265,6 +267,8 @@ class ClassSchedule(db.Model):
             'project_id': self.class_.project_id if self.class_ else None,
             'project_name': self.class_.project.name if self.class_ and self.class_.project else None,
             'city_name': (self.class_.city_ref.name if self.class_ and self.class_.city_ref else '北京'),
+            'location_id': self.location_id,
+            'location_name': (self.location.name if self.location else (self.class_.city_ref.name if self.class_ and self.class_.city_ref else '北京')),
             'topic_id': self.topic_id,
             'topic_name': topic_name,
             'display_topic_name': display_name,

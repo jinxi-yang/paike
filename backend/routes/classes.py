@@ -59,7 +59,19 @@ def precheck_plan():
             attempts += 1
 
         predicted_dates.append(curr_date)
-        curr_date = curr_date + timedelta(weeks=min_interval)
+        
+        # 计算下一预期日期（跳过同月）
+        ideal_next = curr_date + timedelta(days=Config.TARGET_INTERVAL_DAYS)
+        next_date = find_next_available_saturday(ideal_next)
+        
+        if next_date.year == curr_date.year and next_date.month == curr_date.month:
+            if curr_date.month == 12:
+                next_month_1st = date(curr_date.year + 1, 1, 1)
+            else:
+                next_month_1st = date(curr_date.year, curr_date.month + 1, 1)
+            next_date = find_next_available_saturday(next_month_1st)
+            
+        curr_date = next_date
 
     predicted_set = set(predicted_dates)
     occupancy_rows = db.session.query(
@@ -241,6 +253,7 @@ def create():
             affected_dates = set(s.scheduled_date for s in result['schedules'] if s.scheduled_date)
             _recheck_conflicts_for_dates(affected_dates)
     db.session.commit()
+    _resequence_topics_by_date(c.id)
     
     # 返回班级信息（含课表和冲突详情）
     resp = c.to_dict(include_schedules=True)
@@ -396,6 +409,7 @@ def regenerate_schedule(id):
             affected_dates = set(s.scheduled_date for s in result['schedules'] if s.scheduled_date)
             _recheck_conflicts_for_dates(affected_dates)
     db.session.commit()
+    _resequence_topics_by_date(c.id)
     
     resp = c.to_dict(include_schedules=True)
     if c.start_date and c.project_id:
@@ -473,6 +487,17 @@ def add_schedule(id):
     
     scheduled_date = date.fromisoformat(scheduled_date_str)
     
+    # 地点校验
+    from models import City
+    from .schedule import _get_used_non_default_locations
+    location_id_raw = data.get('location_id')
+    location_id_val = int(location_id_raw) if location_id_raw else None
+    if location_id_val and c.city_id and location_id_val != c.city_id:
+        used_locations = _get_used_non_default_locations(id, c.city_id)
+        if location_id_val in used_locations:
+            loc = City.query.get(location_id_val)
+            return jsonify({'error': f'该班级已去过地点「{loc.name if loc else location_id_val}」，不允许再次选择'}), 400
+    
     # 计算 week_number（当前班级最大课次+1）
     max_week = db.session.query(func.max(ClassSchedule.week_number)).filter(
         ClassSchedule.class_id == id
@@ -486,6 +511,7 @@ def add_schedule(id):
         scheduled_date=scheduled_date,
         week_number=max_week + 1,
         status='scheduled',
+        location_id=location_id_val,
         has_opening=data.get('has_opening', False),
         has_team_building=data.get('has_team_building', False),
         has_closing=data.get('has_closing', False)
@@ -657,16 +683,27 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
             notes=note,
             has_opening=(i == 0),
             has_team_building=(i == 0),
-            has_closing=(i == len(topics) - 1)
+            has_closing=(i == len(topics) - 1),
+            location_id=class_obj.city_id
         )
         schedules.append(schedule)
         
         # 下一个日期
         ideal_next = scheduled_date + timedelta(days=Config.TARGET_INTERVAL_DAYS)
         current_date = find_next_available_saturday(ideal_next)
+        
+        # 同月检测：如果和本次课在同一日历月，推到下个月第一个可用周六
+        if current_date.year == scheduled_date.year and current_date.month == scheduled_date.month:
+            if scheduled_date.month == 12:
+                next_month_1st = date_type(scheduled_date.year + 1, 1, 1)
+            else:
+                next_month_1st = date_type(scheduled_date.year, scheduled_date.month + 1, 1)
+            current_date = find_next_available_saturday(next_month_1st)
+            
         if (current_date - scheduled_date).days > getattr(Config, 'MAX_INTERVAL_DAYS', 42):
             earlier = current_date - timedelta(days=7)
-            if earlier > scheduled_date and not is_holiday(earlier):
+            if earlier > scheduled_date and not is_holiday(earlier) \
+               and not (earlier.year == scheduled_date.year and earlier.month == scheduled_date.month):
                 current_date = earlier
     
     return {

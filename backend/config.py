@@ -26,7 +26,7 @@ class Config:
     MAX_WEEKS_INTERVAL = 5  # 最大排课间隔（周）
 
     # === 智能排课算法参数 ===
-    TARGET_INTERVAL_DAYS = 30    # 理想上课间隔（天）
+    TARGET_INTERVAL_DAYS = 35    # 理想上课间隔（天）
     MIN_INTERVAL_DAYS = 21       # 最短允许间隔（3周），低于此值硬拒绝
     MAX_INTERVAL_DAYS = 42       # 超过此值发出警告（6周）
     MAX_CLASSES_PER_SATURDAY = 7 # 每周六最大排课数（= 教室数量）

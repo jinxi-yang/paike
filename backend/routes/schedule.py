@@ -3,7 +3,8 @@
 """
 from flask import Blueprint, jsonify, request, current_app
 from datetime import date, datetime, timedelta
-from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo, Topic, ScheduleConstraint, Homeroom, MergeConfig
+from models import db, ClassSchedule, Class, MonthlyPlan, TeacherCourseCombo, Topic, ScheduleConstraint, Homeroom, MergeConfig, City, Teacher
+from routes.ai import call_ai_extract
 import requests
 import json as _json
 import threading
@@ -537,6 +538,15 @@ def create_schedule():
         weekday_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
         notes = f'手动添加（{weekday_names[scheduled_date.weekday()]}）'
 
+    # 地点校验：检查是否选择了已用过的非默认地点
+    location_id_raw = data.get('location_id')
+    location_id_val = int(location_id_raw) if location_id_raw else None
+    if location_id_val and cls.city_id and location_id_val != cls.city_id:
+        used_locations = _get_used_non_default_locations(class_id, cls.city_id)
+        if location_id_val in used_locations:
+            loc = City.query.get(location_id_val)
+            return jsonify({'error': f'该班级已去过地点「{loc.name if loc else location_id_val}」，不允许再次选择'}), 400
+
     new_schedule = ClassSchedule(
         class_id=class_id,
         topic_id=topic_id,
@@ -547,6 +557,7 @@ def create_schedule():
         status='scheduled',
         notes=notes,
         homeroom_override_id=homeroom_override_id if homeroom_override_id else None,
+        location_id=location_id_val,
         has_opening=data.get('has_opening', False),
         has_team_building=data.get('has_team_building', False),
         has_closing=data.get('has_closing', False),
@@ -767,6 +778,23 @@ def adjust_schedule():
             else:
                 schedule.homeroom_override_id = None
         
+        # 调整上课地点
+        if 'location_id' in data:
+            new_loc_id = data['location_id']
+            if new_loc_id:
+                new_loc_id = int(new_loc_id)
+                # 检查是否为已用过的非默认地点
+                class_obj_loc = schedule.class_
+                default_city_id = class_obj_loc.city_id if class_obj_loc else None
+                if default_city_id and new_loc_id != default_city_id:
+                    used_locs = _get_used_non_default_locations(schedule.class_id, default_city_id, exclude_schedule_id=schedule.id)
+                    if new_loc_id in used_locs:
+                        loc = City.query.get(new_loc_id)
+                        return jsonify({'error': f'该班级已去过地点「{loc.name if loc else new_loc_id}」，不允许再次选择'}), 400
+                schedule.location_id = new_loc_id
+            else:
+                schedule.location_id = None
+
         # 更新备注
         if 'notes' in data:
             schedule.notes = data['notes']
@@ -878,6 +906,69 @@ def move_to_week():
     return jsonify(schedule.to_dict())
 
 
+# ==================== 课题交换 ====================
+
+@schedule_bp.route('/swap-topics', methods=['POST'])
+def swap_topics():
+    """交换同一班级内两个未完成课次的日期和地点"""
+    data = request.get_json()
+    id_a = data.get('schedule_id_a')
+    id_b = data.get('schedule_id_b')
+
+    if not id_a or not id_b or id_a == id_b:
+        return jsonify({'error': '请选择两个不同的课次'}), 400
+
+    sch_a = ClassSchedule.query.get(id_a)
+    sch_b = ClassSchedule.query.get(id_b)
+    if not sch_a or not sch_b:
+        return jsonify({'error': '课次记录不存在'}), 404
+
+    # 必须是同一班级
+    if sch_a.class_id != sch_b.class_id:
+        return jsonify({'error': '只能交换同一班级的课次'}), 400
+
+    # 不能是已完成或已取消
+    for s, label in [(sch_a, 'A'), (sch_b, 'B')]:
+        if s.status in ('completed', 'cancelled'):
+            return jsonify({'error': f'课次 {s.topic.name if s.topic else label} 状态为 {s.status}，无法交换'}), 400
+
+    # 不能是已过去的日期
+    today = date.today()
+    for s in [sch_a, sch_b]:
+        if s.scheduled_date and s.scheduled_date < today:
+            return jsonify({'error': f'课次 {s.topic.name if s.topic else "?"} 的日期已过去，无法交换'}), 400
+
+    # 合班记录不允许交换
+    for s in [sch_a, sch_b]:
+        if s.merged_with:
+            return jsonify({'error': f'课次 {s.topic.name if s.topic else "?"} 已合班，请先拆分'}), 400
+
+    # 执行交换：互换日期和地点
+    sch_a.scheduled_date, sch_b.scheduled_date = sch_b.scheduled_date, sch_a.scheduled_date
+    sch_a.location_id, sch_b.location_id = sch_b.location_id, sch_a.location_id
+
+    db.session.flush()
+
+    # 重新检测两个日期上的冲突
+    dates_to_check = set()
+    if sch_a.scheduled_date:
+        dates_to_check.add(sch_a.scheduled_date)
+    if sch_b.scheduled_date:
+        dates_to_check.add(sch_b.scheduled_date)
+    _recheck_conflicts_for_dates(dates_to_check)
+
+    db.session.commit()
+
+    # 重排课题序号
+    _resequence_topics_by_date(sch_a.class_id)
+
+    return jsonify({
+        'message': '交换成功',
+        'schedule_a': sch_a.to_dict(),
+        'schedule_b': sch_b.to_dict()
+    })
+
+
 # ==================== 合班功能 ====================
 
 @schedule_bp.route('/merge-info', methods=['POST'])
@@ -938,11 +1029,26 @@ def merge_info():
                 'from_class': s.class_.name if s.class_ else ''
             })
     
+    # 收集可选上课地点（合班班级默认地点的合集）
+    locations = []
+    seen_loc = set()
+    for s in schedules:
+        cls = s.class_
+        if cls and cls.city_id and cls.city_id not in seen_loc:
+            seen_loc.add(cls.city_id)
+            city_obj = City.query.get(cls.city_id)
+            locations.append({
+                'location_id': cls.city_id,
+                'name': city_obj.name if city_obj else '未知',
+                'from_class': cls.name
+            })
+    
     return jsonify({
         'dates': dates,
         'combos_day1': combos_day1,
         'combos_day2': combos_day2,
         'homerooms': homerooms,
+        'locations': locations,
         'schedules': [s.to_dict() for s in schedules]
     })
 
@@ -994,7 +1100,8 @@ def merge_classes():
             'status': s.status,
             'conflict_type': s.conflict_type,
             'notes': s.notes,
-            'homeroom_override_id': s.homeroom_override_id  # 保存合班前的班主任设置
+            'homeroom_override_id': s.homeroom_override_id,  # 保存合班前的班主任设置
+            'location_id': s.location_id  # 保存合班前的地点设置
         }
         s.merge_snapshot = json.dumps(snapshot, ensure_ascii=False)
     
@@ -1015,6 +1122,10 @@ def merge_classes():
         # 合班班主任作为临时覆盖保存到每条记录
         if lead_homeroom_id:
             s.homeroom_override_id = lead_homeroom_id
+        # 合班上课地点
+        merged_location_id = data.get('merged_location_id')
+        if merged_location_id:
+            s.location_id = int(merged_location_id)
     
     # 设置合班关联
     for s in schedules[1:]:
@@ -1085,6 +1196,8 @@ def unmerge_class(schedule_id):
             record.notes = snap.get('notes')
             # 恢复班主任设置（合班前的状态）
             record.homeroom_override_id = snap.get('homeroom_override_id')
+            # 恢复地点设置
+            record.location_id = snap.get('location_id')
         except (json.JSONDecodeError, ValueError):
             pass
         record.merge_snapshot = None
@@ -1458,7 +1571,7 @@ def get_constraints():
 
 @schedule_bp.route('/constraints', methods=['POST'])
 def add_constraint():
-    """添加约束条件"""
+    """添加约束条件 — AI解析成功才保存"""
     data = request.get_json()
     year = data.get('year')
     month = data.get('month')
@@ -1469,13 +1582,31 @@ def add_constraint():
     if not description:
         return jsonify({'error': '约束描述不能为空'}), 400
     
+    # 1. 构建排课上下文
+    teachers = Teacher.query.all()
+    homerooms = Homeroom.query.all()
+    classes = Class.query.filter(Class.status != 'completed').all()
+    
+    context = {
+        'current_month': f'{year}-{str(month).zfill(2)}',
+        'teachers': [t.name for t in teachers],
+        'homeroom_teachers': [h.name for h in homerooms],
+        'classes': [c.name for c in classes]
+    }
+    
+    # 2. 调用AI解析
+    parsed, error = call_ai_extract(description, context)
+    if error:
+        return jsonify({'error': f'AI解析失败: {error}'}), 500
+    
+    # 3. AI成功 → 保存约束 + 解析结果
     plan = _get_or_create_plan(year, month)
     
     constraint = ScheduleConstraint(
         monthly_plan_id=plan.id,
         constraint_type=data.get('constraint_type', 'custom'),
         description=description,
-        parsed_data=_json.dumps(data.get('parsed_data')) if data.get('parsed_data') else None,
+        parsed_data=_json.dumps(parsed, ensure_ascii=False) if parsed else None,
         is_active=True
     )
     db.session.add(constraint)
@@ -1649,6 +1780,85 @@ def get_schedule_detail(schedule_id):
     """获取单个排课详情"""
     schedule = ClassSchedule.query.get_or_404(schedule_id)
     return jsonify(schedule.to_dict())
+
+
+# ==================== 可选地点查询 ====================
+
+def _get_used_non_default_locations(class_id, default_city_id, exclude_schedule_id=None):
+    """获取班级已使用过的非默认地点 ID 集合（含合班场景）"""
+    used = set()
+    query = ClassSchedule.query.filter(
+        ClassSchedule.class_id == class_id,
+        ClassSchedule.location_id.isnot(None),
+        ClassSchedule.location_id != default_city_id
+    )
+    if exclude_schedule_id:
+        query = query.filter(ClassSchedule.id != exclude_schedule_id)
+    for s in query.all():
+        used.add(s.location_id)
+    return used
+
+
+@schedule_bp.route('/<int:schedule_id>/available-locations', methods=['GET'])
+def get_available_locations(schedule_id):
+    """获取排课记录可选的上课地点（含历史排除逻辑）"""
+    schedule = ClassSchedule.query.get_or_404(schedule_id)
+    cls = schedule.class_
+    if not cls:
+        return jsonify({'error': '排课记录对应的班级不存在'}), 404
+    
+    default_city_id = cls.city_id
+    all_cities = City.query.order_by(City.id).all()
+    
+    # 获取已使用过的非默认地点（排除当前记录本身）
+    used_locations = _get_used_non_default_locations(cls.id, default_city_id, exclude_schedule_id=schedule_id)
+    
+    locations = []
+    for city in all_cities:
+        is_default = (city.id == default_city_id)
+        is_disabled = (not is_default and city.id in used_locations)
+        reason = '该班级已去过此地点' if is_disabled else None
+        locations.append({
+            'id': city.id,
+            'name': city.name,
+            'is_default': is_default,
+            'is_disabled': is_disabled,
+            'reason': reason
+        })
+    
+    return jsonify({
+        'default_location_id': default_city_id,
+        'current_location_id': schedule.location_id,
+        'locations': locations
+    })
+
+
+@schedule_bp.route('/class/<int:class_id>/available-locations', methods=['GET'])
+def get_class_available_locations(class_id):
+    """获取班级可选的上课地点（增加课次时使用，含历史排除逻辑）"""
+    cls = Class.query.get_or_404(class_id)
+    default_city_id = cls.city_id
+    all_cities = City.query.order_by(City.id).all()
+    
+    used_locations = _get_used_non_default_locations(class_id, default_city_id)
+    
+    locations = []
+    for city in all_cities:
+        is_default = (city.id == default_city_id)
+        is_disabled = (not is_default and city.id in used_locations)
+        reason = '该班级已去过此地点' if is_disabled else None
+        locations.append({
+            'id': city.id,
+            'name': city.name,
+            'is_default': is_default,
+            'is_disabled': is_disabled,
+            'reason': reason
+        })
+    
+    return jsonify({
+        'default_location_id': default_city_id,
+        'locations': locations
+    })
 
 
 # ==================== Excel 导出 ====================
@@ -3581,6 +3791,8 @@ def _run_scheduling_algorithm(year, month, constraints, conflict_mode='smart', o
                     'merge_suggestions': [],
                     'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
                     'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                    'city_name': cls.city.name if cls.city else None,
+                    'default_city_id': cls.city_id,
                     'urgency': info['urgency'],
                     'status': 'scheduled',
                     'is_override': True,
@@ -3742,6 +3954,8 @@ def _run_scheduling_algorithm(year, month, constraints, conflict_mode='smart', o
                 'merge_suggestions': best_merge_suggestions,
                 'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
                 'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                'city_name': cls.city.name if cls.city else None,
+                'default_city_id': cls.city_id,
                 'urgency': info['urgency'],
                 'status': final_status,
                 'is_overflow': best_sat >= end_date,
@@ -3766,6 +3980,8 @@ def _run_scheduling_algorithm(year, month, constraints, conflict_mode='smart', o
                 'merge_suggestions': [],
                 'homeroom_name': (Homeroom.query.get(homeroom_overrides[cls.id]).name if homeroom_overrides.get(cls.id) else (cls.homeroom.name if cls.homeroom else '未分配')),
                 'homeroom_id': homeroom_overrides.get(cls.id, cls.homeroom_id),
+                'city_name': cls.city.name if cls.city else None,
+                'default_city_id': cls.city_id,
                 'urgency': info['urgency'],
                 'skip_reason': '所有候选日期均不可用',
                 'available_combos': combos_list,
@@ -4202,6 +4418,8 @@ def generate_schedule():
     merges = data.get('merges', [])
     raw_hr_overrides = data.get('homeroom_overrides', {})
     homeroom_overrides = {int(k): v for k, v in raw_hr_overrides.items()} if raw_hr_overrides else {}
+    raw_loc_overrides = data.get('location_overrides', {})
+    location_overrides = {int(k): v for k, v in raw_loc_overrides.items()} if raw_loc_overrides else {}
 
     if not year or not month:
         return jsonify({'error': 'Missing year/month'}), 400
@@ -4292,6 +4510,8 @@ def generate_schedule():
 
             # 班主任临时覆盖
             hr_override = homeroom_overrides.get(a['class_id'])
+            # 地点临时覆盖
+            loc_override = location_overrides.get(a['class_id'])
 
             # ★ UPDATE 已有记录（不删除不重建）
             existing = schedule_by_class.get(a['class_id'])
@@ -4302,8 +4522,11 @@ def generate_schedule():
                 existing.conflict_type = conflict_type_val
                 existing.notes = final_notes
                 existing.homeroom_override_id = hr_override
+                if loc_override:
+                    existing.location_id = loc_override
             else:
                 # 极端情况兜底：原记录不存在时才创建新记录
+                _cls_for_loc = Class.query.get(a['class_id'])
                 new_schedule = ClassSchedule(
                     class_id=a['class_id'],
                     topic_id=a['topic_id'],
@@ -4314,7 +4537,8 @@ def generate_schedule():
                     status='scheduled',
                     conflict_type=conflict_type_val,
                     notes=final_notes,
-                    homeroom_override_id=hr_override
+                    homeroom_override_id=hr_override,
+                    location_id=loc_override or (_cls_for_loc.city_id if _cls_for_loc else None)
                 )
                 db.session.add(new_schedule)
             generated_count += 1
@@ -4415,8 +4639,12 @@ def generate_schedule():
         # 清理全库残留记录
         stale_count = _cleanup_stale_scheduled_records()
 
-        # 排课日期变动后重排所有相关班级的课题序号
+        # 排课日期变动后重排所有相关班级的课题序号（含合班目标班级）
         affected_class_ids = set(a['class_id'] for a in assignments if a.get('assigned_date'))
+        for m in merges:
+            tid = m.get('target_class_id')
+            if tid:
+                affected_class_ids.add(tid)
         for cid in affected_class_ids:
             _resequence_topics_by_date(cid)
 

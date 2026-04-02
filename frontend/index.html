@@ -538,14 +538,9 @@
             background: #eef2ff !important;
             border: 2px dashed #7c3aed !important;
         }
-        /* 操作按钮默认隐藏 hover 显示 */
+        /* 操作按钮始终显示 */
         .compact-table .row-actions {
-            opacity: 0;
-            transition: opacity 0.15s;
             white-space: nowrap;
-        }
-        .compact-table tbody tr:hover .row-actions {
-            opacity: 1;
         }
         /* 紧凑表格内的 select */
         .compact-table select {
@@ -922,7 +917,7 @@
                             </button>
                             <div id="constraints-result"
                                 class="hidden bg-blue-50 p-3 rounded-xl border border-blue-200 text-xs space-y-2 mt-4">
-                                <div class="font-bold text-blue-700">AI 提取到的约束</div>
+                                <div class="font-bold text-blue-700">本次排课生效的约束</div>
                                 <div id="constraints-content"></div>
                             </div>
                     </div>
@@ -1569,11 +1564,19 @@
                         <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="adjust-day2-has-closing" class="w-3 h-3 accent-indigo-500">结业典礼</label>
                     </div>
                 </div>
-                <div>
-                    <label class="text-xs font-bold">班主任</label>
-                    <select id="adjust-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1">
-                        <option value="">-- 保持不变 --</option>
-                    </select>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-xs font-bold">班主任</label>
+                        <select id="adjust-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1">
+                            <option value="">-- 保持不变 --</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs font-bold">上课地点</label>
+                        <select id="adjust-location" class="w-full text-sm p-2 border rounded-lg mt-1">
+                            <option value="">-- 加载中 --</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="moveScheduleWeek('prev')"
@@ -1640,12 +1643,19 @@
                     </div>
                 </div>
 
-                <div>
-                    <label class="text-xs font-bold text-slate-700">特定班主任 (选填)</label>
-                    <select id="add-session-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1"></select>
-                    <p class="text-[10px] text-slate-400 mt-1">留空则默认使用班级班主任</p>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-xs font-bold text-slate-700">班主任 (选填)</label>
+                        <select id="add-session-homeroom" class="w-full text-sm p-2 border rounded-lg mt-1"></select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs font-bold text-slate-700">上课地点 (选填)</label>
+                        <select id="add-session-location" class="w-full text-sm p-2 border rounded-lg mt-1">
+                            <option value="">-- 默认班级地点 --</option>
+                        </select>
+                    </div>
                 </div>
-                
+
                 <div>
                     <label class="text-xs font-bold text-slate-700">备注</label>
                     <textarea id="add-session-notes" rows="2" class="w-full text-sm p-2 border rounded-lg mt-1" placeholder="填写排课备注..."></textarea>
@@ -1689,12 +1699,44 @@
                     <label class="text-xs font-bold text-slate-600">带班班主任</label>
                     <select id="merge-homeroom-select" class="w-full mt-1 border rounded-lg p-2 text-sm"></select>
                 </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-600">上课地点</label>
+                    <select id="merge-location-select" class="w-full mt-1 border rounded-lg p-2 text-sm"></select>
+                </div>
             </div>
             <div class="p-4 border-t bg-white flex justify-end gap-3">
                 <button onclick="closeMergeConfig()"
                     class="px-4 py-2 text-sm bg-slate-100 rounded-lg hover:bg-slate-200">取消</button>
                 <button onclick="confirmMonthMerge()"
                     class="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold">确认合班</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 课题交换弹窗 -->
+    <div id="swap-topic-modal" class="modal-overlay" onclick="if(event.target==this) closeSwapModal()">
+        <div class="modal-content glass-card w-[820px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold">🔄 课题交换</h3>
+                    <p class="text-xs opacity-80 mt-1">交换两个未上课课题的日期和地点</p>
+                </div>
+                <button onclick="closeSwapModal()" class="p-2 rounded-full hover:bg-blue-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="swap-source-panel" class="px-5 pt-4 pb-2"></div>
+            <div class="px-5 pb-2">
+                <div class="text-xs font-bold text-slate-600 mb-1">选择要交换的目标课题：</div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 pb-3">
+                <div id="swap-target-list"></div>
+                <div id="swap-empty-tip" class="text-center text-slate-400 py-6 text-sm hidden">没有可交换的课题</div>
+            </div>
+            <div id="swap-confirm-bar" class="p-4 border-t bg-white flex items-center justify-between gap-3 hidden">
+                <div id="swap-confirm-info" class="text-sm text-slate-700 flex-1"></div>
+                <div class="flex gap-2">
+                    <button onclick="cancelSwapSelection()" class="px-4 py-2 text-sm bg-slate-100 rounded-lg hover:bg-slate-200">取消</button>
+                    <button onclick="executeSwapTopic()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold">确认交换</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1847,14 +1889,16 @@
                 if (!schedResp.ok) throw new Error('获取失败');
                 const sch = await schedResp.json();
 
-                const [combosResp, hrResp, topicsResp] = await Promise.all([
+                const [combosResp, hrResp, topicsResp, locResp] = await Promise.all([
                     fetch(`${API_BASE}/combos?topic_id=${sch.topic_id}`),
                     fetch(`${API_BASE}/homerooms`),
-                    fetch(`${API_BASE}/topics?project_id=${sch.project_id}`)
+                    fetch(`${API_BASE}/topics?project_id=${sch.project_id}`),
+                    fetch(`${API_BASE}/schedule/${schId}/available-locations`)
                 ]);
                 const combos = await combosResp.json();
                 const homerooms = await hrResp.json();
                 const topics = await topicsResp.json();
+                const locData = locResp.ok ? await locResp.json() : null;
 
                 // 检测同日忙碌班主任
                 const busyHr = {};
@@ -1878,6 +1922,16 @@
                     return `<option value="${h.id}" ${h.name === (sch.homeroom_name || '') ? 'selected' : ''} ${busy ? 'style="color:#dc2626;"' : ''}>${h.name}${busy ? ' ⚠️(' + busy + ')' : ''}</option>`;
                 }).join('');
                 const topicOpts = topics.map(t => `<option value="${t.id}" ${t.id === sch.topic_id ? 'selected' : ''}>${t.name}</option>`).join('');
+                let locOpts = '';
+                if (locData && locData.locations) {
+                    const curLocId = locData.current_location_id || locData.default_location_id;
+                    locOpts = locData.locations.map(loc => {
+                        const sel = loc.id === curLocId ? 'selected' : '';
+                        const dis = loc.is_disabled ? 'disabled' : '';
+                        const hint = loc.is_disabled ? ' (已去过)' : '';
+                        return `<option value="${loc.id}" ${sel} ${dis}>${loc.name}${hint}</option>`;
+                    }).join('');
+                }
 
                 const ss = 'font-size:10px;padding:1px 4px;border:1px solid #e2e8f0;border-radius:3px;max-width:140px;';
                 const ls = 'font-size:9px;color:#64748b;margin-right:2px;';
@@ -1892,6 +1946,7 @@
                     <button type="button" id="ie-c2-btn-${schId}" style="${ss}max-width:140px;background:#fff;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;" onclick="ComboPicker.open(document.getElementById('ie-c2-${schId}').value, (id, text) => { document.getElementById('ie-c2-${schId}').value = id; this.textContent = text; }, '选择第二天课程', currentTrainingTypeId)">${c2Label}</button>
                     <input type="hidden" id="ie-c2-${schId}" value="${sch.combo_id_2 || ''}">
                     <span style="${ls}">班主任</span><select id="ie-hr-${schId}" style="${ss}">${hrOpts}</select>
+                    ${locOpts ? `<span style="${ls}">地点</span><select id="ie-loc-${schId}" style="${ss}">${locOpts}</select>` : ''}
                     <button onclick="saveInlineEdit(${schId});event.stopPropagation();" style="font-size:10px;padding:2px 10px;background:#4f46e5;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;">保存</button>
                 `;
                 editRow.dataset.loaded = '1';
@@ -1905,6 +1960,8 @@
             const comboId = document.getElementById('ie-c1-' + schId)?.value;
             const combo2Id = document.getElementById('ie-c2-' + schId)?.value;
             const hrId = document.getElementById('ie-hr-' + schId)?.value;
+            const locEl = document.getElementById('ie-loc-' + schId);
+            const locId = locEl ? locEl.value : null;
 
             // 非周六：确认弹窗而非硬拒绝
             let userConfirmedNonSaturday = false;
@@ -1926,6 +1983,7 @@
                 if (comboId) payload.combo_id = parseInt(comboId);
                 if (combo2Id) payload.combo_id_2 = parseInt(combo2Id);
                 if (hrId) payload.homeroom_override_id = parseInt(hrId);
+                if (locId) payload.location_id = parseInt(locId);
                 // 跨课题：发送 topic_id
                 const topicSel = document.getElementById('ie-topic-' + schId);
                 if (topicSel && topicSel.value && topicSel.dataset.orig && parseInt(topicSel.value) !== parseInt(topicSel.dataset.orig)) {
@@ -3446,7 +3504,7 @@
                     const hrSameDate = sameDate.filter(x => x.homeroom_name === hrName);
                     const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
                     const hasAnyConflict = hasConflict || !!d1Conflict || !!d2Conflict || hrConflict;
-                    const progress = s.week_number && s.total_topics ? `${s.week_number}/${s.total_topics}` : '';
+                    const progress = (s.week_number !== null && s.week_number !== undefined) ? `${s.week_number}/${s.total_topics || '-'}` : '';
 
                     // 行样式
                     let rowClass = '';
@@ -3498,8 +3556,9 @@
                         <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span>${d1BadgeHtml}</td>
                         <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span>${d2BadgeHtml}</td>
                         <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
+                        <td><span style="font-size:10px;color:#7c3aed;">${s.location_name || s.city_name || '未设置'}</span></td>
                         <td>${statusText}</td>
-                        <td><span class="row-actions"><button onclick="openAdjustModal(${s.id})" style="font-size:10px;padding:0 4px;background:#f1f5f9;border-radius:3px;cursor:pointer;margin-right:2px;">编辑</button><button onclick="deleteScheduleItem(${s.id}, ${isCompleted})" style="font-size:10px;padding:0 4px;background:#fef2f2;color:#dc2626;border-radius:3px;cursor:pointer;">删除</button></span></td>
+                        <td><span class="row-actions"><button onclick="openAdjustModal(${s.id})" style="font-size:10px;padding:0 4px;background:#f1f5f9;border-radius:3px;cursor:pointer;margin-right:2px;">编辑</button><button onclick="deleteScheduleItem(${s.id}, ${isCompleted})" style="font-size:10px;padding:0 4px;background:#fef2f2;color:#dc2626;border-radius:3px;cursor:pointer;margin-right:2px;">删除</button>${(!isCompleted && !isPast) ? `<button onclick="openSwapTopicModal(${s.id})" style='font-size:10px;padding:0 4px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:3px;cursor:pointer;'>🔄交换</button>` : ''}</span></td>
                     </tr>`;
                 }).join('');
 
@@ -3509,13 +3568,14 @@
                         <span class="text-[10px] text-slate-400">${items.length} 节课</span>
                     </div>
                     <div class="overflow-x-auto"><table class="compact-table"><thead><tr>
-                        <th style="width:14%">日期</th>
-                        <th style="width:18%">课题</th>
-                        <th style="width:17%">第一天</th>
-                        <th style="width:17%">第二天</th>
-                        <th style="width:12%">班主任</th>
+                        <th style="width:13%">日期</th>
+                        <th style="width:16%">课题</th>
+                        <th style="width:15%">第一天</th>
+                        <th style="width:15%">第二天</th>
+                        <th style="width:10%">班主任</th>
+                        <th style="width:8%">地点</th>
                         <th style="width:10%">状态</th>
-                        <th style="width:12%">操作</th>
+                        <th style="width:13%">操作</th>
                     </tr></thead><tbody>${rowsHtml}</tbody></table></div>
                 </div>`;
             }).join('');
@@ -3616,6 +3676,169 @@
             } catch (e) {
                 showToast('删除请求失败: ' + e.message, 'error');
             }
+        }
+
+        // ==================== 课题交换 ====================
+        let _swapSourceId = null;
+        let _swapTargetId = null;
+
+        function _swapSchRow(s, highlight) {
+            const d = new Date(s.scheduled_date);
+            const sun = new Date(d); sun.setDate(d.getDate() + 1);
+            const dateStr = `${d.getMonth()+1}/${d.getDate()}(${['日','一','二','三','四','五','六'][d.getDay()]})~${sun.getMonth()+1}/${sun.getDate()}(${['日','一','二','三','四','五','六'][sun.getDay()]})`;
+            const t1Name = s.combo ? s.combo.teacher_name : '待定';
+            const t1Course = s.combo ? s.combo.course_name : '';
+            const t2Name = s.combo_2 ? s.combo_2.teacher_name : t1Name;
+            const t2Course = s.combo_2 ? s.combo_2.course_name : t1Course;
+            const loc = s.location_name || s.city_name || '未设置';
+            const wn = s.week_number;
+            const tt = s.total_topics;
+            const progress = (wn !== null && wn !== undefined) ? `${wn}/${tt || '-'}` : '-/-';
+            const bg = highlight ? 'background:#eff6ff;' : '';
+            return `<tr style="${bg}">
+                <td style="font-weight:600;white-space:nowrap;">${s.display_topic_name || s.topic_name || '—'}</td>
+                <td style="white-space:nowrap;">${dateStr}</td>
+                <td><span style="font-weight:600;color:#334155;">${t1Name}</span><br><span style="font-size:10px;color:#94a3b8;">${t1Course}</span></td>
+                <td><span style="font-weight:600;color:#334155;">${t2Name}</span><br><span style="font-size:10px;color:#94a3b8;">${t2Course}</span></td>
+                <td><span style="font-size:10px;color:#7c3aed;">${loc}</span></td>
+                <td style="text-align:center;">${progress}</td>
+                <td></td>
+            </tr>`;
+        }
+
+        async function openSwapTopicModal(scheduleId) {
+            _swapSourceId = scheduleId;
+            _swapTargetId = null;
+            const modal = document.getElementById('swap-topic-modal');
+            const srcPanel = document.getElementById('swap-source-panel');
+            const listEl = document.getElementById('swap-target-list');
+            const emptyTip = document.getElementById('swap-empty-tip');
+            const confirmBar = document.getElementById('swap-confirm-bar');
+
+            listEl.innerHTML = '<div class="text-center text-slate-400 py-4 text-sm">加载中...</div>';
+            srcPanel.innerHTML = '';
+            emptyTip.classList.add('hidden');
+            confirmBar.classList.add('hidden');
+            modal.classList.add('active');
+            lucide.createIcons();
+
+            try {
+                const resp = await fetch(`${API_BASE}/classes/${await _getClassIdBySchedule(scheduleId)}`);
+                const data = await resp.json();
+                const schedules = data.schedules || [];
+                const source = schedules.find(s => s.id === scheduleId);
+                if (!source) { showToast('课次不存在', 'error'); closeSwapModal(); return; }
+
+                // 当前课题信息
+                srcPanel.innerHTML = `<div class="text-xs font-bold text-slate-600 mb-1">当前课题：</div>
+                    <div class="overflow-x-auto"><table class="compact-table" style="table-layout: fixed;"><thead><tr>
+                        <th style="width:20%">课题</th><th style="width:18%">日期</th><th style="width:16%">周六</th><th style="width:16%">周日</th><th style="width:8%">地点</th><th style="width:8%">进度</th><th style="width:14%"></th>
+                    </tr></thead><tbody>${_swapSchRow(source, true)}</tbody></table></div>`;
+
+                const today = new Date(new Date().setHours(0,0,0,0));
+                const targets = schedules.filter(s =>
+                    s.id !== scheduleId &&
+                    s.status !== 'completed' &&
+                    s.status !== 'cancelled' &&
+                    new Date(s.scheduled_date) >= today &&
+                    !s.merged_with
+                );
+
+                if (targets.length === 0) {
+                    listEl.innerHTML = '';
+                    emptyTip.classList.remove('hidden');
+                } else {
+                    // 存储 targets 以供确认使用
+                    window._swapTargets = targets;
+                    listEl.innerHTML = `<div class="overflow-x-auto"><table class="compact-table" style="table-layout: fixed;"><thead><tr>
+                        <th style="width:20%">课题</th><th style="width:18%">日期</th><th style="width:16%">周六</th><th style="width:16%">周日</th><th style="width:8%">地点</th><th style="width:8%">进度</th><th style="width:14%"></th>
+                    </tr></thead><tbody>${targets.map(t => {
+                        const d = new Date(t.scheduled_date);
+                        const sun = new Date(d); sun.setDate(d.getDate() + 1);
+                        const dateStr = `${d.getMonth()+1}/${d.getDate()}(${['日','一','二','三','四','五','六'][d.getDay()]})~${sun.getMonth()+1}/${sun.getDate()}(${['日','一','二','三','四','五','六'][sun.getDay()]})`;
+                        const t1Name = t.combo ? t.combo.teacher_name : '待定';
+                        const t1Course = t.combo ? t.combo.course_name : '';
+                        const t2Name = t.combo_2 ? t.combo_2.teacher_name : t1Name;
+                        const t2Course = t.combo_2 ? t.combo_2.course_name : t1Course;
+                        const loc = t.location_name || t.city_name || '未设置';
+                        const progress = (t.week_number !== null && t.week_number !== undefined) ? `${t.week_number}/${t.total_topics || '-'}` : '-/-';
+                        return `<tr id="swap-row-${t.id}" style="cursor:pointer;" onclick="selectSwapTarget(${t.id})" class="hover:bg-blue-50">
+                            <td style="font-weight:600;white-space:nowrap;">${t.display_topic_name || t.topic_name || '—'}</td>
+                            <td style="white-space:nowrap;">${dateStr}</td>
+                            <td><span style="font-weight:600;color:#334155;">${t1Name}</span><br><span style="font-size:10px;color:#94a3b8;">${t1Course}</span></td>
+                            <td><span style="font-weight:600;color:#334155;">${t2Name}</span><br><span style="font-size:10px;color:#94a3b8;">${t2Course}</span></td>
+                            <td><span style="font-size:10px;color:#7c3aed;">${loc}</span></td>
+                            <td style="text-align:center;">${progress}</td>
+                            <td><button onclick="selectSwapTarget(${t.id});event.stopPropagation();" style="font-size:10px;padding:1px 6px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:4px;cursor:pointer;white-space:nowrap;">选择</button></td>
+                        </tr>`;
+                    }).join('')}</tbody></table></div>`;
+                }
+            } catch (e) {
+                listEl.innerHTML = `<div class="text-center text-red-500 py-4 text-sm">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function selectSwapTarget(targetId) {
+            _swapTargetId = targetId;
+            // 高亮选中行
+            document.querySelectorAll('#swap-target-list tr').forEach(tr => {
+                tr.style.background = tr.id === `swap-row-${targetId}` ? '#dbeafe' : '';
+            });
+            // 显示确认栏
+            const target = (window._swapTargets || []).find(t => t.id === targetId);
+            const confirmBar = document.getElementById('swap-confirm-bar');
+            const confirmInfo = document.getElementById('swap-confirm-info');
+            if (target) {
+                confirmInfo.innerHTML = `将与 <strong>${target.topic_name || '?'}</strong>（${target.scheduled_date}）交换日期和地点`;
+            }
+            confirmBar.classList.remove('hidden');
+        }
+
+        function cancelSwapSelection() {
+            _swapTargetId = null;
+            document.querySelectorAll('#swap-target-list tr').forEach(tr => tr.style.background = '');
+            document.getElementById('swap-confirm-bar').classList.add('hidden');
+        }
+
+        async function _getClassIdBySchedule(scheduleId) {
+            if (currentClassId) return currentClassId;
+            if (cachedMonthData) {
+                for (const w of cachedMonthData.weeks || []) {
+                    const found = (w.schedules || []).find(s => s.id === scheduleId);
+                    if (found) return found.class_id;
+                }
+            }
+            return null;
+        }
+
+        async function executeSwapTopic() {
+            if (!_swapSourceId || !_swapTargetId) return;
+            try {
+                const resp = await fetch(`${API_BASE}/schedule/swap-topics`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ schedule_id_a: _swapSourceId, schedule_id_b: _swapTargetId })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    showToast(data.message || '交换成功', 'success');
+                    closeSwapModal();
+                    if (currentClassId) openClassScheduleModal(currentClassId);
+                    if (typeof loadMonthSchedule === 'function') loadMonthSchedule();
+                } else {
+                    showToast(data.error || '交换失败', 'error');
+                }
+            } catch (e) {
+                showToast('交换请求失败: ' + e.message, 'error');
+            }
+        }
+
+        function closeSwapModal() {
+            document.getElementById('swap-topic-modal').classList.remove('active');
+            document.getElementById('swap-confirm-bar').classList.add('hidden');
+            _swapSourceId = null;
+            _swapTargetId = null;
+            window._swapTargets = null;
         }
 
         // ==================== 视图状态管理====================
@@ -3887,17 +4110,18 @@
                     html += `<div class="p-3 text-xs text-slate-400 italic">本周无课</div>`;
                 } else {
                     html += `<div class="overflow-x-auto"><table class="compact-table"><thead><tr>
-                        <th style="width:16%">班级</th>
-                        <th style="width:14%">课题</th>
-                        <th style="width:18%">${satLabel}</th>
-                        <th style="width:18%">${sunLabel}</th>
+                        <th style="width:14%">班级</th>
+                        <th style="width:12%">课题</th>
+                        <th style="width:16%">${satLabel}</th>
+                        <th style="width:16%">${sunLabel}</th>
                         <th style="width:10%">班主任</th>
+                        <th style="width:8%">地点</th>
                         <th style="width:10%">进度</th>
-                        <th style="width:14%"></th>
+                        <th style="width:14%">操作</th>
                     </tr></thead><tbody>`;
 
                     w.schedules.forEach(sch => {
-                        const progress = sch.week_number && sch.total_topics ? `${sch.week_number}/${sch.total_topics}` : '-/-';
+                        const progress = (sch.week_number !== null && sch.week_number !== undefined) ? `${sch.week_number}/${sch.total_topics || '-'}` : '-/-';
                         const isSelected = selectedMergeIds.has(sch.id);
                         const isCompleted = sch.status === 'completed';
                         const isConfirmed = sch.status === 'confirmed';
@@ -4011,21 +4235,23 @@
                             hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
                         });
 
-                        const cityBadge = sch.city_name && sch.city_name !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${sch.city_name}</span>` : '';
+                        const _locName = sch.location_name || sch.city_name;
+                        const cityBadge = _locName && _locName !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${_locName}</span>` : '';
 
                         html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
-                            <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${cityBadge}${mergedBadge}</td>
+                            <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
                             <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
                             <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
                             <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
                             <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
+                            <td><span style="font-size:10px;color:#7c3aed;">${_locName || sch.city_name || '未设置'}</span></td>
                             <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
-                            <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''} ${mergeSuggestHtml}</td>
+                            <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''}${(!isPast && !isCompleted && !isMerged) ? ` <button onclick="openSwapTopicModal(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:3px;cursor:pointer;">🔄交换</button>` : ''} ${mergeSuggestHtml}</td>
                         </tr>`;
                         // 点击展开编辑行
                         if (!isPast) {
                             html += `<tr id="edit-row-${sch.id}" class="schedule-edit-row" style="display:none;">
-                                <td colspan="7" style="background:#f8fafc;padding:4px 8px;">
+                                <td colspan="8" style="background:#f8fafc;padding:4px 8px;">
                                     <div class="edit-row-content" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                                         <span style="font-size:10px;color:#94a3b8;">点击加载编辑...</span>
                                     </div>
@@ -4128,6 +4354,16 @@
                     `<option value="${h.name}">${h.name}（来自${h.from_class}）</option>`
                 ).join('') || '<option value="">无班主任</option>';
 
+                // 填充上课地点（合班班级默认地点合集）
+                const mergeLocSelect = document.getElementById('merge-location-select');
+                if (info.locations && info.locations.length) {
+                    mergeLocSelect.innerHTML = info.locations.map(loc =>
+                        `<option value="${loc.location_id}">${loc.name}（来自${loc.from_class}）</option>`
+                    ).join('');
+                } else {
+                    mergeLocSelect.innerHTML = '<option value="">-- 无可用地点 --</option>';
+                }
+
                 // 打开配置弹窗
                 document.getElementById('merge-config-modal').classList.add('active');
                 lucide.createIcons();
@@ -4210,17 +4446,18 @@
                 html += `<div class="min-h-[200px] flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl m-2 bg-slate-50/50"><div class="text-slate-400 text-sm">本周暂无课程安排</div></div>`;
             } else {
                 html += `<div class="bg-white rounded-lg border border-slate-200 overflow-hidden mx-2"><div class="overflow-x-auto"><table class="compact-table"><thead><tr>
-                    <th style="width:16%">班级</th>
-                    <th style="width:14%">课题</th>
-                    <th style="width:18%">${satLabel}</th>
-                    <th style="width:18%">${sunLabel}</th>
+                    <th style="width:14%">班级</th>
+                    <th style="width:12%">课题</th>
+                    <th style="width:16%">${satLabel}</th>
+                    <th style="width:16%">${sunLabel}</th>
                     <th style="width:10%">班主任</th>
+                    <th style="width:8%">地点</th>
                     <th style="width:10%">进度</th>
-                    <th style="width:14%"></th>
+                    <th style="width:14%">操作</th>
                 </tr></thead><tbody>`;
 
                 w.schedules.forEach(sch => {
-                    const progress = sch.week_number && sch.total_topics ? `${sch.week_number}/${sch.total_topics}` : '-/-';
+                    const progress = (sch.week_number !== null && sch.week_number !== undefined) ? `${sch.week_number}/${sch.total_topics || '-'}` : '-/-';
                     const isSelected = selectedMergeIds.has(sch.id);
                     const isCompleted = sch.status === 'completed';
                     const isConfirmed = sch.status === 'confirmed';
@@ -4331,21 +4568,23 @@
                         hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
                     });
 
-                    const cityBadge = sch.city_name && sch.city_name !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${sch.city_name}</span>` : '';
+                    const _locName2 = sch.location_name || sch.city_name;
+                    const cityBadge = _locName2 && _locName2 !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${_locName2}</span>` : '';
 
                     html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
-                        <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${cityBadge}${mergedBadge}</td>
+                        <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
                         <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
                         <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
                         <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
                         <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
+                        <td><span style="font-size:10px;color:#7c3aed;">${_locName2 || sch.city_name || '未设置'}</span></td>
                         <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
-                        <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''} ${mergeSuggestHtml}</td>
+                        <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''}${(!isPast && !isCompleted && !isMerged) ? ` <button onclick="openSwapTopicModal(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:3px;cursor:pointer;">🔄交换</button>` : ''} ${mergeSuggestHtml}</td>
                     </tr>`;
                     // 点击展开编辑行
                     if (!isPast) {
                         html += `<tr id="edit-row-${sch.id}" class="schedule-edit-row" style="display:none;">
-                            <td colspan="7" style="background:#f8fafc;padding:4px 8px;">
+                            <td colspan="8" style="background:#f8fafc;padding:4px 8px;">
                                 <div class="edit-row-content" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                                     <span style="font-size:10px;color:#94a3b8;">点击加载编辑...</span>
                                 </div>
@@ -4409,30 +4648,60 @@
             }
         }
 
+        function _formatParsedSummary(parsed) {
+            if (!parsed) return '';
+            let parts = [];
+            if (parsed.blocked_dates?.length) {
+                parts.push('📅 避开: ' + parsed.blocked_dates.map(d => d.date || d).join(', '));
+            }
+            if (parsed.teacher_unavailable?.length) {
+                parts.push('🚫 讲师: ' + parsed.teacher_unavailable.map(t => `${t.teacher_name} ${(t.dates||[]).join(',')}`).join('; '));
+            }
+            if (parsed.homeroom_unavailable?.length) {
+                parts.push('🚫 班主任: ' + parsed.homeroom_unavailable.map(h => `${h.homeroom_name} ${(h.dates||[]).join(',')}`).join('; '));
+            }
+            if (parsed.preferred_dates?.length) {
+                parts.push('⭐ 优先: ' + parsed.preferred_dates.map(p => `${p.class_name||''} ${p.preferred_date||''}`).join('; '));
+            }
+            return parts.length ? parts.join(' | ') : '（AI未识别到具体约束）';
+        }
+
         function renderConstraintsList(constraints) {
             const listEl = document.getElementById('constraints-list');
             if (!constraints || constraints.length === 0) {
                 listEl.innerHTML = '<div class="text-slate-400 text-xs text-center p-3 flex flex-col items-center gap-1"><svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>暂无约束条件</div>';
                 return;
             }
-            listEl.innerHTML = constraints.map(c => `
-                <div class="flex items-center gap-2 p-2 rounded-lg border ${c.is_active ? 'bg-blue-50/50 border-blue-200' : 'bg-slate-50 border-slate-200 opacity-60'} group transition-all">
-                    <input type="checkbox" ${c.is_active ? 'checked' : ''}
-                        onchange="toggleConstraint(${c.id}, this.checked)"
-                        class="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer">
-                    <span class="flex-1 text-xs ${c.is_active ? 'text-slate-700' : 'text-slate-400 line-through'}">${c.description}</span>
-                    <button onclick="deleteConstraint(${c.id})"
-                        class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                    </button>
-                </div>
-            `).join('');
+            listEl.innerHTML = constraints.map(c => {
+                const summary = _formatParsedSummary(c.parsed_data);
+                return `
+                <div class="flex flex-col gap-1 p-2 rounded-lg border ${c.is_active ? 'bg-blue-50/50 border-blue-200' : 'bg-slate-50 border-slate-200 opacity-60'} group transition-all">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" ${c.is_active ? 'checked' : ''}
+                            onchange="toggleConstraint(${c.id}, this.checked)"
+                            class="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer">
+                        <span class="flex-1 text-xs ${c.is_active ? 'text-slate-700' : 'text-slate-400 line-through'}">${c.description}</span>
+                        <button onclick="deleteConstraint(${c.id})"
+                            class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    ${c.parsed_data ? `<div class="text-[10px] text-green-600 pl-5.5 ml-1">✅ ${summary}</div>` : ''}
+                </div>`;
+            }).join('');
         }
 
         async function addNewConstraint() {
             const input = document.getElementById('new-constraint-input');
             const text = input.value.trim();
             if (!text) { input.focus(); return; }
+
+            // 显示加载状态
+            const addBtn = input.nextElementSibling;
+            const origBtnText = addBtn.innerHTML;
+            addBtn.disabled = true;
+            addBtn.innerHTML = '<span class="loading" style="width:14px;height:14px;"></span> AI解析中...';
+            input.disabled = true;
 
             try {
                 const resp = await fetch(`${API_BASE}/schedule/constraints`, {
@@ -4447,13 +4716,17 @@
                 if (resp.ok) {
                     input.value = '';
                     loadConstraints();
-                    showToast('约束已添加');
+                    showToast('约束已添加并解析成功', 'success');
                 } else {
                     const err = await resp.json();
-                    showToast(err.error || '添加失败', 'error');
+                    showToast(err.error || '添加失败（AI解析失败）', 'error');
                 }
             } catch (e) {
                 showToast('添加失败: ' + e.message, 'error');
+            } finally {
+                addBtn.disabled = false;
+                addBtn.innerHTML = origBtnText;
+                input.disabled = false;
             }
         }
 
@@ -4825,6 +5098,16 @@
                     `<option value="${h.name}">${h.name}（来自${h.from_class}）</option>`
                 ).join('') || '<option value="">无班主任</option>';
 
+                // 填充上课地点（合班班级默认地点合集）
+                const mergeLocSelect = document.getElementById('merge-location-select');
+                if (info.locations && info.locations.length) {
+                    mergeLocSelect.innerHTML = info.locations.map(loc =>
+                        `<option value="${loc.location_id}">${loc.name}（来自${loc.from_class}）</option>`
+                    ).join('');
+                } else {
+                    mergeLocSelect.innerHTML = '<option value="">-- 无可用地点 --</option>';
+                }
+
                 // 打开弹窗
                 document.getElementById('merge-config-modal').classList.add('active');
                 lucide.createIcons();
@@ -4842,6 +5125,7 @@
             const comboId = document.getElementById('merge-combo1-select').value;
             const comboId2 = document.getElementById('merge-combo2-select').value;
             const leadHomeroom = document.getElementById('merge-homeroom-select').value;
+            const mergedLocationId = document.getElementById('merge-location-select').value;
 
             try {
                 const resp = await fetch(`${API_BASE}/schedule/merge`, {
@@ -4852,7 +5136,8 @@
                         merged_date: mergedDate,
                         merged_combo_id: comboId || null,
                         merged_combo_id_2: comboId2 || null,
-                        lead_homeroom_name: leadHomeroom
+                        lead_homeroom_name: leadHomeroom,
+                        merged_location_id: mergedLocationId || null
                     })
                 });
 
@@ -5031,15 +5316,17 @@
                 const topicSelect = document.getElementById('adjust-topic');
                 const topicHint = document.getElementById('adjust-topic-hint');
 
-                // 并行加载：课题列表、所有组合、班主任
-                const [topicsResp, allCombosResp, hrResp] = await Promise.all([
+                // 并行加载：课题列表、所有组合、班主任、可选地点
+                const [topicsResp, allCombosResp, hrResp, locResp] = await Promise.all([
                     fetch(`${API_BASE}/topics?project_id=${schedule.project_id}`),
                     fetch(`${API_BASE}/combos`),
-                    fetch(`${API_BASE}/homerooms`)
+                    fetch(`${API_BASE}/homerooms`),
+                    fetch(`${API_BASE}/schedule/${scheduleId}/available-locations`)
                 ]);
                 const topics = await topicsResp.json();
                 window._allCachedCombos = await allCombosResp.json();
                 const homerooms = await hrResp.json();
+                const locData = await locResp.json();
 
                 // 课题选择器 (全局主课题)
                 topicSelect.innerHTML = topics.map(t =>
@@ -5076,6 +5363,21 @@
                     const style = busy ? 'color:#dc2626;' : '';
                     return `<option value="${h.id}" ${sel} style="${style}">${h.name}${busyMark}</option>`;
                 }).join('');
+
+                // 5. 上课地点
+                const locSelect = document.getElementById('adjust-location');
+                if (locData && locData.locations) {
+                    const currentLocId = locData.current_location_id || locData.default_location_id;
+                    locSelect.innerHTML = locData.locations.map(loc => {
+                        const sel = loc.id === currentLocId ? 'selected' : '';
+                        const dis = loc.is_disabled ? 'disabled' : '';
+                        const hint = loc.is_disabled ? ` (已去过)` : '';
+                        const style = loc.is_disabled ? 'color:#94a3b8;' : '';
+                        return `<option value="${loc.id}" ${sel} ${dis} style="${style}">${loc.name}${hint}</option>`;
+                    }).join('');
+                } else {
+                    locSelect.innerHTML = '<option value="">-- 无可用地点 --</option>';
+                }
 
                 // 日期 onchange 提示
                 document.getElementById('adjust-new-date').onchange = function() {
@@ -5160,6 +5462,9 @@
                 // 班主任
                 const hrId = document.getElementById('adjust-homeroom').value;
                 if (hrId) payload.homeroom_override_id = parseInt(hrId);
+                // 上课地点
+                const locId = document.getElementById('adjust-location').value;
+                payload.location_id = locId ? parseInt(locId) : null;
                 
                 payload.has_opening = document.getElementById('adjust-has-opening').checked;
                 payload.has_team_building = document.getElementById('adjust-has-team').checked;
@@ -5247,12 +5552,28 @@
                 // 加载班主任
                 const hrResp = await fetch(`${API_BASE}/homerooms`);
                 const homerooms = await hrResp.json();
-                document.getElementById('add-session-homeroom').innerHTML = '<option value="">-- 使用班级默认 --</option>' + 
+                document.getElementById('add-session-homeroom').innerHTML = `<option value="">-- ${clsData.homeroom_name || '未分配'} --</option>` + 
                     homerooms.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
                     
                 document.getElementById('add-session-combo').innerHTML = '<option value="">-- 先选择课题 --</option>';
                 document.getElementById('add-session-combo-2').innerHTML = '<option value="">-- 先选择课题 --</option>';
                 
+                // 加载可选地点
+                try {
+                    const locResp = await fetch(`${API_BASE}/schedule/class/${classId}/available-locations`);
+                    const locData = await locResp.json();
+                    const locSelect = document.getElementById('add-session-location');
+                    if (locData && locData.locations) {
+                        locSelect.innerHTML = locData.locations.map(loc => {
+                            const sel = loc.is_default ? 'selected' : '';
+                            const dis = loc.is_disabled ? 'disabled' : '';
+                            const hint = loc.is_disabled ? ' (已去过)' : '';
+                            const style = loc.is_disabled ? 'color:#94a3b8;' : '';
+                            return `<option value="${loc.id}" ${sel} ${dis} style="${style}">${loc.name}${hint}</option>`;
+                        }).join('');
+                    }
+                } catch(e) { console.warn('load locations failed', e); }
+
                 document.getElementById('add-session-modal').classList.add('active');
                 lucide.createIcons();
             } catch(e) {
@@ -5315,7 +5636,8 @@
                 day2_has_opening: document.getElementById('add-session-day2-has-opening').checked,
                 day2_has_team_building: document.getElementById('add-session-day2-has-team').checked,
                 day2_has_closing: document.getElementById('add-session-day2-has-closing').checked,
-                notes: document.getElementById('add-session-notes').value
+                notes: document.getElementById('add-session-notes').value,
+                location_id: document.getElementById('add-session-location').value ? parseInt(document.getElementById('add-session-location').value) : null
             };
             
             try {
@@ -5386,14 +5708,11 @@
                 savedConstraints = (allConstraints || []).filter(c => c.is_active);
             } catch (e) { /* 加载失败不阻碍生成 */ }
 
-            // 合并所有约束为一段提示文本
-            const prompt = savedConstraints.map(c => c.description).join('；');
-
             // ✅ 重排确认框
             if (!await showConfirm('智能重排确认', '⚠️ 当前操作将会覆盖当前预览数据，确认要重新排课吗？')) return;
 
             btn.disabled = true;
-            btn.innerHTML = '<span class="loading"></span> ' + (prompt ? 'AI 正在分析约束...' : '正在智能排课...');
+            btn.innerHTML = '<span class="loading"></span> 正在智能排课...';
 
             // 锁定整个页面，防止用户误操作
             let overlay = document.getElementById('schedule-loading-overlay');
@@ -5429,58 +5748,38 @@
             resultBox.classList.add('hidden');
 
             try {
-                // 0. 准备上下文数据
-                const [teachersResp, homeroomsResp, classesResp] = await Promise.all([
-                    fetch(`${API_BASE}/teachers`),
-                    fetch(`${API_BASE}/homerooms`),
-                    fetch(`${API_BASE}/classes`)
-                ]);
-
-                const teachersData = await teachersResp.json();
-                const homeroomsData = await homeroomsResp.json();
-                const classesData = await classesResp.json();
-
-                const context = {
-                    current_month: `${currentYear}-${String(currentMonth).padStart(2, '0')}`,
-                    teachers: teachersData.map(t => t.name),
-                    homeroom_teachers: homeroomsData.map(h => h.name),
-                    classes: classesData.map(c => c.name)
-                };
-
-                // 1. 提取约束（如果有prompt）
+                // 直接从已保存的约束中合并 parsed_data（不再调用AI）
                 let constraints = {};
-                if (prompt) {
-                    const resp = await fetch(`${API_BASE}/ai/extract-constraints`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt, context })
-                    });
-
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        constraints = data.constraints || {};
-
-                        // 显示提取结果
-                        let html = '';
-                        if (constraints.blocked_dates?.length) {
-                            html += '<div class="mb-1">📅 <strong>避开日期：</strong>' + constraints.blocked_dates.map(d => `${d.date}(${d.reason})`).join(', ') + '</div>';
+                for (const c of savedConstraints) {
+                    if (c.parsed_data) {
+                        const pd = c.parsed_data;
+                        for (const key of ['blocked_dates', 'teacher_unavailable', 'homeroom_unavailable', 'preferred_dates', 'merge_suggestions']) {
+                            if (pd[key] && Array.isArray(pd[key]) && pd[key].length > 0) {
+                                if (!constraints[key]) constraints[key] = [];
+                                constraints[key].push(...pd[key]);
+                            }
                         }
-                        if (constraints.teacher_unavailable?.length) {
-                            html += '<div class="mb-1">🚫 <strong>讲师请假：</strong>' + constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${t.dates.join(',')}`).join('; ') + '</div>';
+                        // 保留字符串类型字段
+                        if (pd.special_notes && !constraints.special_notes) {
+                            constraints.special_notes = pd.special_notes;
                         }
-                        if (constraints.homeroom_unavailable?.length) {
-                            html += '<div class="mb-1">🚫 <strong>班主任请假：</strong>' + constraints.homeroom_unavailable.map(h => `${h.homeroom_name}: ${h.dates.join(',')}`).join('; ') + '</div>';
-                        }
-                        document.getElementById('constraints-content').innerHTML = html || '未识别到具体约束，将按默认规则排课。';
-                        resultBox.classList.remove('hidden');
-                    } else {
-                        // AI调用失败，显示错误反馈，但不阻止排课继续
-                        let errMsg = 'AI约束提取失败';
-                        try { const errData = await resp.json(); errMsg = errData.error || errMsg; } catch(e) {}
-                        document.getElementById('constraints-content').innerHTML = `<div class="text-red-600">⚠️ ${errMsg}</div><div class="text-slate-500 mt-1">约束未生效，将按无约束模式排课。请检查AI智能体配置。</div>`;
-                        resultBox.classList.remove('hidden');
-                        console.error('AI constraint extraction failed:', resp.status);
                     }
+                }
+
+                // 显示汇总的约束信息
+                if (Object.keys(constraints).length > 0) {
+                    let html = '';
+                    if (constraints.blocked_dates?.length) {
+                        html += '<div class="mb-1">📅 <strong>避开日期：</strong>' + constraints.blocked_dates.map(d => `${d.date}(${d.reason || ''})`).join(', ') + '</div>';
+                    }
+                    if (constraints.teacher_unavailable?.length) {
+                        html += '<div class="mb-1">🚫 <strong>讲师请假：</strong>' + constraints.teacher_unavailable.map(t => `${t.teacher_name}: ${(t.dates||[]).join(',')}`).join('; ') + '</div>';
+                    }
+                    if (constraints.homeroom_unavailable?.length) {
+                        html += '<div class="mb-1">🚫 <strong>班主任请假：</strong>' + constraints.homeroom_unavailable.map(h => `${h.homeroom_name}: ${(h.dates||[]).join(',')}`).join('; ') + '</div>';
+                    }
+                    document.getElementById('constraints-content').innerHTML = html;
+                    resultBox.classList.remove('hidden');
                 }
 
                 // 保存当前约束，供预览确认时使用
@@ -6611,9 +6910,11 @@
         let previewComboOverrides = {};  // {classId: {combo1: comboId, combo2: comboId}}
         let previewMerges = [];          // [{class_id, target_class_id, combo_id, combo_id_2, date}]
         let previewHomeroomOverrides = {}; // {class_id: new_homeroom_id}
+        let previewLocationOverrides = {};  // {class_id: new_location_id}
         let pendingMerge = null;         // 当前正在编辑的合班信息
         let currentConstraints = {};    // 当前一轮所用的约束
         let allHomerooms = [];           // 所有班主任缓存
+        let allCities = [];              // 所有城市缓存
 
         async function ensureHomerooms() {
             if (allHomerooms.length > 0) return;
@@ -6622,12 +6923,20 @@
                 allHomerooms = await resp.json();
             } catch (e) { console.warn('load homerooms failed', e); }
         }
+        async function ensureCities() {
+            if (allCities.length > 0) return;
+            try {
+                const resp = await fetch(`${API_BASE}/cities`);
+                allCities = await resp.json();
+            } catch (e) { console.warn('load cities failed', e); }
+        }
 
         async function openPreviewModal(data) {
             previewData = data;
             previewOverrides = {};
             previewComboOverrides = {};
             previewHomeroomOverrides = {};
+            previewLocationOverrides = {};
             previewMerges = [];
             previewCandidateSaturdays = data.candidate_saturdays || [];
             previewAllSaturdays = data.all_saturdays || [];
@@ -6637,8 +6946,8 @@
                 targetIntervalDays: cfg.target_interval_days || 30,
             };
 
-            // 加载班主任列表
-            await ensureHomerooms();
+            // 加载班主任和城市列表
+            await Promise.all([ensureHomerooms(), ensureCities()]);
 
             // 切换到预览模式：隐藏月度排课，显示预览
             document.getElementById('schedule-header').classList.add('hidden');
@@ -6754,14 +7063,15 @@
                             <span class="text-[10px] text-slate-400 ml-auto">${weekItems.length} 个班级</span>
                         </div>
                         <div class="overflow-x-auto"><table class="compact-table"><thead><tr>
-                            <th style="width:16%">班级</th>
-                            <th style="width:14%">课题</th>
-                            <th style="width:14%">六 ${satDate.getMonth() + 1}/${satDate.getDate()}</th>
-                            <th style="width:14%">日 ${sunDate.getMonth() + 1}/${sunDate.getDate()}</th>
-                            <th style="width:10%">班主任</th>
-                            <th style="width:12%">日期</th>
+                            <th style="width:14%">班级</th>
+                            <th style="width:12%">课题</th>
+                            <th style="width:13%">六 ${satDate.getMonth() + 1}/${satDate.getDate()}</th>
+                            <th style="width:13%">日 ${sunDate.getMonth() + 1}/${sunDate.getDate()}</th>
+                            <th style="width:9%">班主任</th>
+                            <th style="width:7%">地点</th>
+                            <th style="width:10%">日期</th>
                             <th style="width:8%">间隔</th>
-                            <th style="width:12%">状态</th>
+                            <th style="width:14%">状态</th>
                         </tr></thead><tbody>`;
 
                     weekItems.forEach(a => {
@@ -6841,7 +7151,8 @@
                             }).join(' ');
                         }
 
-                        const previewCityBadge = a.city_name && a.city_name !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${a.city_name}</span>` : '';
+                        const _previewLocName = a.location_name || a.city_name;
+                        const previewCityBadge = _previewLocName && _previewLocName !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${_previewLocName}</span>` : '';
 
                         // 数据行（只读摘要）
                         let html_row = `<tr class="${rowClass}" style="cursor:pointer;" onclick="togglePreviewEdit(${a.class_id})" title="点击展开编辑">
@@ -6850,6 +7161,7 @@
                             <td><span style="font-weight:600;color:#334155;">${day1Display}</span><br><span style="font-size:10px;color:#94a3b8;">${day1Course}</span></td>
                             <td><span style="font-weight:600;color:#334155;">${day2Display}</span><br><span style="font-size:10px;color:#94a3b8;">${day2Course}</span></td>
                             <td>${hrDisplay}</td>
+                            <td><span style="font-size:10px;color:#7c3aed;">${_previewLocName || a.city_name || '未设置'}</span></td>
                             <td style="font-size:10px;">${dateDisplay}</td>
                             <td>${intervalHtml}</td>
                             <td>${statusHtml} ${mergeSuggestHtml}</td>
@@ -6894,8 +7206,19 @@
                         const conflictsHtml = hasConflicts ? `<div style="font-size:9px;color:#dc2626;margin-top:2px;">${a.conflicts.join('；')}</div>` : '';
                         const overflowHtml = isOverflow ? '<span style="font-size:9px;font-weight:700;color:#ea580c;background:#fff7ed;padding:0 4px;border-radius:3px;">⚡ 溢出到下月</span>' : '';
 
+                        // 地点选择
+                        let locationSelect = `<span style="font-size:10px;color:#7c3aed;">${_previewLocName || a.city_name || '未设置'}</span>`;
+                        if (allCities.length > 0) {
+                            const curLocId = a.location_id || a.default_city_id;
+                            const locOptions = allCities.map(c => {
+                                const sel = c.id == curLocId ? 'selected' : '';
+                                return `<option value="${c.id}" ${sel}>${c.name}</option>`;
+                            }).join('');
+                            locationSelect = `<select onchange="previewChangeLocation(${a.class_id}, this.value)">${locOptions}</select>`;
+                        }
+
                         html_row += `<tr class="preview-edit-row" id="preview-edit-${a.class_id}">
-                            <td colspan="8" style="white-space:normal;">
+                            <td colspan="9" style="white-space:normal;">
                                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">第一天:</label>
                                     <select onchange="previewAdjustCombo(${a.class_id}, 'combo1', this.value)">${sat_combo_options || '<option>无可用组合</option>'}</select>
@@ -6903,6 +7226,8 @@
                                     <select onchange="previewAdjustCombo(${a.class_id}, 'combo2', this.value)">${sun_combo_options || '<option>无可用组合</option>'}</select>
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">班主任:</label>
                                     ${homeroomSelect}
+                                    <label style="font-size:9px;color:#64748b;font-weight:700;">地点:</label>
+                                    ${locationSelect}
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">日期:</label>
                                     <select onchange="previewAdjustDate(${a.class_id}, this.value, ${JSON.stringify(a.last_date)})">${dateOptions}</select>
                                 </div>
@@ -7362,6 +7687,21 @@
             await evaluatePreviewOnly();
         }
 
+        function previewChangeLocation(classId, newLocationId) {
+            previewLocationOverrides[classId] = parseInt(newLocationId);
+            if (previewData && previewData.preview) {
+                const a = previewData.preview.find(x => x.class_id == classId);
+                if (a) {
+                    a.location_id = parseInt(newLocationId);
+                    const city = allCities.find(c => c.id == newLocationId);
+                    a.location_name = city ? city.name : null;
+                }
+            }
+            const cityName = allCities.find(c => c.id == newLocationId)?.name || '?';
+            showToast(`本次排课临时使用地点「${cityName}」`, 'info');
+            renderPreview();
+        }
+
         async function applyPreview() {
             const btn = document.getElementById('apply-preview-btn-inline');
             btn.disabled = true;
@@ -7379,7 +7719,8 @@
                         overrides: previewOverrides,
                         combo_overrides: previewComboOverrides,
                         merges: previewMerges,
-                        homeroom_overrides: previewHomeroomOverrides
+                        homeroom_overrides: previewHomeroomOverrides,
+                        location_overrides: previewLocationOverrides
                     })
                 });
                 const result = await resp.json();

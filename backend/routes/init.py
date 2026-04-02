@@ -3,6 +3,7 @@
 """
 from flask import Blueprint, jsonify, request
 from models import db, Project, Topic, Class, ClassSchedule, TeacherCourseCombo
+from .schedule import _resequence_topics_by_date
 from datetime import datetime, timedelta
 
 init_bp = Blueprint('init', __name__)
@@ -151,7 +152,8 @@ def init_class_progress():
                     notes='课程录入导入',
                     has_opening=has_opening,
                     has_team_building=has_team_building,
-                    has_closing=has_closing
+                    has_closing=has_closing,
+                    location_id=cls.city_id
                 )
                 db.session.add(schedule)
                 created.append({'topic_id': topic_id, 'status': record_status})
@@ -173,6 +175,9 @@ def init_class_progress():
             cls.start_date = min(dates)
     
     db.session.commit()
+    
+    # 重算 week_number，确保所有排课记录有正确的课次序号
+    _resequence_topics_by_date(class_id)
     
     # 检查班级是否所有课题已完成(仅在排课变更时触发)
     from .classes import check_class_completion
