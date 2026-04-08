@@ -2,7 +2,7 @@
 项目API（原培训班类型）
 """
 from flask import Blueprint, jsonify, request
-from models import db, Project
+from models import db, Project, Topic
 
 project_bp = Blueprint('project', __name__)
 
@@ -27,6 +27,17 @@ def create():
         description=data.get('description')
     )
     db.session.add(p)
+    db.session.flush()  # 获取 p.id
+
+    # 自动创建"其他"课题
+    other_topic = Topic(
+        project_id=p.id,
+        sequence=99,
+        name='其他',
+        is_fixed=False,
+        is_other=True
+    )
+    db.session.add(other_topic)
     db.session.commit()
     return jsonify(p.to_dict()), 201
 

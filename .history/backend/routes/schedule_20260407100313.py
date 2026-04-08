@@ -634,9 +634,6 @@ def create_schedule():
 def adjust_schedule():
     """调整单节课的日期或教-课组合"""
     data = request.get_json()
-    with open('debug_adjust_schedule.log', 'a', encoding='utf-8') as f:
-        import json
-        f.write(json.dumps(data, ensure_ascii=False) + '\\n')
     schedule_id = data.get('schedule_id')
     force = data.get('force', False)
     
@@ -677,11 +674,11 @@ def adjust_schedule():
     target_topic_id = schedule.topic_id
     if data.get('combo_id'):
         c1 = TeacherCourseCombo.query.get(data['combo_id'])
-        if c1 and c1.topic_id != target_topic_id and data['combo_id'] != schedule.combo_id:
+        if c1 and c1.topic_id != target_topic_id:
             return jsonify({'error': '第一天分配的讲师/课程不属于该课题，请重新选择'}), 400
     if data.get('combo_id_2'):
         c2 = TeacherCourseCombo.query.get(data['combo_id_2'])
-        if c2 and c2.topic_id != target_topic_id and data['combo_id_2'] != schedule.combo_id_2:
+        if c2 and c2.topic_id != target_topic_id:
             return jsonify({'error': '第二天分配的讲师/课程不属于该课题，请重新选择'}), 400
 
     # 强制模式：跳过冲突检查直接应用修改，但仍走重检测流程
@@ -2492,7 +2489,7 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
             # 排序：优先不同讲师、高优先级
             def pair_sort_key(p):
                 same_teacher = 1 if (p[0].teacher_id == p[1].teacher_id) else 0
-                priority = -((p[0].priority or 0) + (p[1].priority or 0))
+                # priority = -(p[0].priority + p[1].priority)
                 return (same_teacher, priority)
             pairs.sort(key=pair_sort_key)
             
@@ -2508,44 +2505,7 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
         if current_conflict_count == 0:
             continue  # 已经没冲突了，跳过
         
-        # *** 关键：只对有冲突的班级解锁，其余班级保持原组合不动 ***
-        # 检测每个班级是否涉及冲突
-        sat_teachers = {}  # {teacher_id: [slot_index]}
-        sun_teachers = {}
-        for si, (idx, pairs, locked) in enumerate(slot_options):
-            if locked:
-                continue
-            a = assignments[idx]
-            t1 = combo_cache.get(a.get('combo_id'))
-            t2 = combo_cache.get(a.get('combo_id_2'))
-            t1_id = t1.teacher_id if t1 else None
-            t2_id = t2.teacher_id if t2 else None
-            if t1_id:
-                sat_teachers.setdefault(t1_id, []).append(si)
-            if t2_id:
-                sun_teachers.setdefault(t2_id, []).append(si)
-        
-        conflicting_slots = set()
-        for tid, slots in sat_teachers.items():
-            if len(slots) > 1:
-                conflicting_slots.update(slots)
-        for tid, slots in sun_teachers.items():
-            if len(slots) > 1:
-                conflicting_slots.update(slots)
-        
-        # 锁定无冲突的班级
-        new_slot_options = []
-        for si, (idx, pairs, locked) in enumerate(slot_options):
-            if locked or si not in conflicting_slots:
-                # 无冲突或已锁定：固定为当前组合
-                c1 = combo_cache.get(assignments[idx].get('combo_id'))
-                c2 = combo_cache.get(assignments[idx].get('combo_id_2'))
-                new_slot_options.append((idx, [(c1, c2)], True))
-            else:
-                new_slot_options.append((idx, pairs, False))
-        slot_options = new_slot_options
-        
-        print(f'[phase2] 日期 {date_str}: {len(indices)}个班级, 当前冲突 {current_conflict_count}, 涉及冲突 {len(conflicting_slots)}个班级', flush=True)
+        print(f'[phase2] 日期 {date_str}: {len(indices)}个班级, 当前冲突 {current_conflict_count}', flush=True)
         
         # 穷举搜索：找讲师冲突为0的方案
         all_pair_lists = [so[1] for so in slot_options]
@@ -2559,14 +2519,6 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
             # 穷举搜索（小规模，毫秒级）
             best_assignment = None
             best_conflict_count = float('inf')
-            best_change_count = float('inf')  # 最小化讲师变动数
-
-            # 记录每个slot的原始combo_id, 用于计算变动数
-            original_combos = []
-            for so in slot_options:
-                idx = so[0]
-                a = assignments[idx]
-                original_combos.append((a.get('combo_id'), a.get('combo_id_2')))
             
             for combo_tuple in iter_product(*all_pair_lists):
                 sat_teachers = {}
@@ -2584,25 +2536,11 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
                             conflicts += 1
                         sun_teachers[c2.teacher_id] = slot_options[i][0]
                 
-                # 计算与原始方案的变动数
-                change_count = 0
-                for i, (c1, c2) in enumerate(combo_tuple):
-                    orig_c1, orig_c2 = original_combos[i]
-                    new_c1 = c1.id if c1 else None
-                    new_c2 = c2.id if c2 else None
-                    if new_c1 != orig_c1:
-                        change_count += 1
-                    if new_c2 != orig_c2:
-                        change_count += 1
-
-                # 优先选冲突最少的，冲突数相同时选变动最少的
-                if (conflicts < best_conflict_count or
-                    (conflicts == best_conflict_count and change_count < best_change_count)):
+                if conflicts < best_conflict_count:
                     best_conflict_count = conflicts
-                    best_change_count = change_count
                     best_assignment = combo_tuple
-                    if conflicts == 0 and change_count == 0:
-                        break  # 无冲突且无变动，完美方案
+                    if conflicts == 0:
+                        break
         else:
             # 贪心策略（大规模，毫秒级）：按选择最少优先排序，逐个分配最优组合
             indexed_slots = list(enumerate(slot_options))
@@ -3123,9 +3061,8 @@ def _score_candidate(cls, sat, last_date, combo1, combo2, assigned_map, constrai
     weight_conflict = getattr(_cfg, 'SCORE_CONFLICT_WEIGHT', 0.4)
     weight_balance = getattr(_cfg, 'SCORE_BALANCE_WEIGHT', 0.1)
     weight_in_month = getattr(_cfg, 'SCORE_IN_MONTH_WEIGHT', 0.1)
-    # 亲和力提权：必须大于 interval 的分差，锁定无冲突原日期；同时增强 conflict 相对权重保证其绝对优先
-    weight_affinity = weight_interval + 0.15
-    weight_conflict = max(weight_conflict, weight_affinity + 0.5)
+    # 亲和力权重提高：确保在间隔安全区内原日期不被轻易替换
+    weight_affinity = 0.35
 
     total = (
         interval_score * weight_interval +
@@ -3218,25 +3155,6 @@ def _recalculate_assignments_conflicts(assignments, constraints, homeroom_overri
                 conflict_reasons.append(f'周日讲师 {t_name} 撞课({other.get("class_name", "?")})')
 
         # 去重（同一冲突可能从多个维度重复报告）
-        # S5: 班主任连续带班间隔 < 14天（软约束警告）
-        if a_hr:
-            try:
-                a_date_obj = date.fromisoformat(a_date) if isinstance(a_date, str) else a_date
-                for other in active:
-                    if other['class_id'] == a_cls_id:
-                        continue
-                    o_hr = homeroom_overrides.get(other['class_id'], other.get('homeroom_id'))
-                    if o_hr and o_hr == a_hr and other['assigned_date'] != a_date:
-                        try:
-                            o_date_obj = date.fromisoformat(other['assigned_date']) if isinstance(other['assigned_date'], str) else other['assigned_date']
-                            gap = abs((a_date_obj - o_date_obj).days)
-                            if 0 < gap < 14:
-                                conflict_reasons.append(f'班主任连续带班(与{other.get("class_name", "?")}间隔{gap}天<14天)')
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
         seen = set()
         unique_reasons = []
         for r in conflict_reasons:
@@ -3726,13 +3644,11 @@ def _precompute_class_data(year, month, constraints, **kwargs):
         elif s.combo_id_2:
             combo2 = TeacherCourseCombo.query.get(s.combo_id_2)
 
-        # 默认combo选择规则：未落盘时尝试找不同讲师以区分（可选），已落盘时空记录则严格复用combo1
         if not combo1 and all_combos:
             combo1 = all_combos[0]
         if not combo2:
             combo2 = combo1
-            # 仅对于未落盘的数据，智能排课可以做讲师拆分；如果已经是已排课状态的，空值明确代表复用第一天的讲师，不应被强制覆盖
-            if s.status != 'scheduled' and all_combos:
+            if all_combos:
                 for c in all_combos:
                     if combo1 and c.teacher_id != combo1.teacher_id:
                         combo2 = c

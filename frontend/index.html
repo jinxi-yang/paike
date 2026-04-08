@@ -515,6 +515,11 @@
             border-left: 4px solid #f87171;
         }
         .compact-table .row-conflict:hover { background: #fee2e2 !important; }
+        .compact-table .row-warning {
+            background: #fff7ed;
+            border-left: 4px solid #fb923c;
+        }
+        .compact-table .row-warning:hover { background: #ffedd5 !important; }
         .compact-table .row-merged {
             background: #faf5ff;
             border-left: 4px solid #a78bfa;
@@ -1020,6 +1025,8 @@
                         </div>
                         <!-- 跳过的班级 -->
                         <div id="preview-skipped-inline" class="hidden"></div>
+                        <!-- 顺延到下月的班级 -->
+                        <div id="preview-deferred-inline" class="hidden"></div>
                     </div>
 
                 </div>
@@ -1529,19 +1536,15 @@
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-700">课题</label>
-                    <select id="adjust-topic" class="w-full text-sm p-2 border rounded-lg mt-1 mb-2">
+                    <select id="adjust-topic" class="w-full text-sm p-2 border rounded-lg mt-1 mb-2" onchange="onAdjustTopicChange()">
                         <option value="">-- 加载中 --</option>
                     </select>
-                    <div id="adjust-topic-hint" class="text-[10px] text-slate-500 mt-1">注：修改主课题不再影响下方的讲师课程列表，请在下方单独选择。</div>
+                    <div id="adjust-topic-hint" class="text-[10px] text-slate-500 mt-1">注：修改课题后，请在下方重新选择配套的讲师和课程。</div>
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-700">第一天安排</label>
-                    <div class="mt-1 mb-2">
-                        <button type="button" class="w-full flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-sm text-left" onclick="ComboPicker.open(document.getElementById('adjust-combo-id').value, (id, text) => { document.getElementById('adjust-combo-id').value = id; document.getElementById('adjust-sat-text').textContent = text; }, '选择第一天课程', currentTrainingTypeId)">
-                            <span id="adjust-sat-text" class="text-sm font-medium text-slate-700 truncate">-- 点击选择讲师及课程 --</span>
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
-                        </button>
-                        <input type="hidden" id="adjust-combo-id" value="">
+                    <div class="mt-1 mb-2 flex">
+                        <div id="adjust-cascade-1" class="flex flex-1 w-full gap-2 py-0 border-none px-0"></div>
                     </div>
                     <div class="flex items-center gap-4 text-xs mt-1">
                         <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="adjust-has-opening" class="w-3 h-3 accent-indigo-500">开学典礼</label>
@@ -1551,12 +1554,8 @@
                 </div>
                 <div class="mt-4">
                     <label class="text-xs font-bold text-slate-700">第二天安排</label>
-                    <div class="mt-1 mb-2">
-                        <button type="button" class="w-full flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-sm text-left" onclick="ComboPicker.open(document.getElementById('adjust-combo2-id').value, (id, text) => { document.getElementById('adjust-combo2-id').value = id; document.getElementById('adjust-sun-text').textContent = text; }, '选择第二天课程', currentTrainingTypeId)">
-                            <span id="adjust-sun-text" class="text-sm font-medium text-slate-700 truncate">-- 点击选择讲师及课程 --</span>
-                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
-                        </button>
-                        <input type="hidden" id="adjust-combo2-id" value="">
+                    <div class="mt-1 mb-2 flex">
+                        <div id="adjust-cascade-2" class="flex flex-1 w-full gap-2 py-0 border-none px-0"></div>
                     </div>
                     <div class="flex items-center gap-4 text-xs mt-1">
                         <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="adjust-day2-has-opening" class="w-3 h-3 accent-indigo-500">开学典礼</label>
@@ -1659,6 +1658,21 @@
                 <div>
                     <label class="text-xs font-bold text-slate-700">备注</label>
                     <textarea id="add-session-notes" rows="2" class="w-full text-sm p-2 border rounded-lg mt-1" placeholder="填写排课备注..."></textarea>
+                </div>
+                <div id="add-session-postpone-section" class="hidden">
+                    <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-amber-600 font-bold text-xs">⚠️ 受影响课次推迟</span>
+                            <span id="add-session-postpone-info" class="text-[10px] text-amber-500"></span>
+                        </div>
+                        <select id="add-session-postpone-weeks" class="w-full text-sm p-2 border border-amber-300 rounded-lg bg-white">
+                            <option value="0">不推迟后续课次</option>
+                            <option value="1">推迟 1 周</option>
+                            <option value="2">推迟 2 周</option>
+                            <option value="3">推迟 3 周</option>
+                            <option value="4">推迟 4 周</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             
@@ -1865,6 +1879,200 @@
                 if (panel) toggleScheduleFullscreen();
             }
         });
+        // ==================== 全局辅助函数 ====================
+        let currentOpenDropdown = null;
+        document.addEventListener('click', (e) => {
+            if (currentOpenDropdown) {
+                const { container, popup } = currentOpenDropdown;
+                if (container && popup && !container.contains(e.target) && !popup.contains(e.target)) {
+                    popup.classList.add('hidden');
+                    currentOpenDropdown = null;
+                }
+            }
+        });
+        window.addEventListener('scroll', (e) => {
+            if (currentOpenDropdown) {
+                if (currentOpenDropdown.popup && currentOpenDropdown.popup.contains(e.target)) return;
+                currentOpenDropdown.popup.classList.add('hidden');
+                currentOpenDropdown = null;
+            }
+        }, true); // Use capture to catch scrolling on interior divs
+
+        // 级联菜单下拉框生成器 (两栏级联：左老师，右课程)
+        function renderCascadingComboSelect(containerId, combos, selectedComboId, hiddenInputId, onchangeCallback = null) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            container.innerHTML = '';
+            container.classList.add('relative', 'text-left', 'align-middle');
+            if (!container.className.includes('w-')) {
+                container.classList.add('w-full', 'min-w-[140px]', 'max-w-[220px]');
+            }
+            
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = hiddenInputId;
+            hidden.value = selectedComboId || '';
+            
+            const teacherMap = {};
+            combos.forEach(c => {
+                if (!teacherMap[c.teacher_name]) teacherMap[c.teacher_name] = [];
+                teacherMap[c.teacher_name].push(c);
+            });
+            
+            const selC = combos.find(c => c.id == selectedComboId);
+            let displayText = selC ? `${selC.teacher_name} - ${selC.course_name}` : '-- 选择讲师/课程 --';
+            let displayStyle = '';
+            if (selC && selC.is_invalid_legacy) {
+                displayText = '⚠️旧课题残留: ' + displayText;
+                displayStyle = 'color:#ef4444;';
+            }
+            
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'w-full flex items-center justify-between text-xs px-2 py-1.5 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 transition truncate min-h-[26px] ml-1';
+            btn.innerHTML = `<span class="truncate block w-full text-left font-bold" title="${displayText}" style="${displayStyle || 'color:#334155;'}">${displayText}</span> <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400 shrink-0 ml-1"></i>`;
+            
+            const popup = document.createElement('div');
+            popup.className = 'cascader-popup hidden absolute z-[9999] mt-1 bg-white border border-slate-200 shadow-xl rounded flex overflow-hidden';
+            popup.style.width = '360px';
+            popup.style.height = '240px';
+            popup.style.position = 'absolute'; 
+            
+            const leftPane = document.createElement('div');
+            leftPane.className = 'w-[120px] border-r border-slate-100 bg-slate-50 overflow-y-auto relative shrink-0 [&::-webkit-scrollbar]:hidden';
+            
+            const rightPane = document.createElement('div');
+            rightPane.className = 'flex-1 bg-white overflow-y-auto p-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full';
+            
+            popup.appendChild(leftPane);
+            popup.appendChild(rightPane);
+            
+            container.appendChild(btn);
+            document.body.appendChild(popup); // 挂载到 body 避免 overflow clipping
+            container.appendChild(hidden);
+            
+            let activeTeacherEl = null;
+
+            function renderRightPane(tName) {
+                rightPane.innerHTML = '';
+                const courses = teacherMap[tName] || [];
+                if (courses.length === 0) {
+                    rightPane.innerHTML = '<div class="text-[10px] text-slate-400 p-2 text-center mt-4">无相关课程</div>';
+                    return;
+                }
+                courses.forEach(c => {
+                    const isSel = (hidden.value == c.id);
+                    const cEl = document.createElement('div');
+                    cEl.className = `text-[11px] p-2 cursor-pointer hover:bg-indigo-50 rounded mb-0.5 transition flex flex-col ${isSel ? 'bg-indigo-50 border border-indigo-100' : 'border border-transparent'}`;
+                    
+                    const titleEl = document.createElement('div');
+                    titleEl.className = `font-bold whitespace-normal leading-tight w-full ${isSel ? 'text-indigo-700' : 'text-slate-700'}`;
+                    titleEl.textContent = c.course_name;
+                    titleEl.title = c.course_name;
+                    
+                    cEl.appendChild(titleEl);
+                    if (isSel) {
+                        const check = document.createElement('div');
+                        check.className = 'text-[10px] text-indigo-500 mt-1 flex items-center gap-1 font-medium';
+                        check.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> 当前选择';
+                        cEl.appendChild(check);
+                    }
+                    
+                    cEl.onclick = (e) => {
+                        e.stopPropagation();
+                        hidden.value = c.id;
+                        const newTxt = `${c.teacher_name} - ${c.course_name}`;
+                        btn.querySelector('span').textContent = newTxt;
+                        btn.querySelector('span').title = newTxt;
+                        popup.classList.add('hidden');
+                        currentOpenDropdown = null;
+                        renderRightPane(tName);
+                        if (window.lucide) lucide.createIcons();
+                        if (onchangeCallback) onchangeCallback(c.id);
+                    };
+                    rightPane.appendChild(cEl);
+                });
+                if (window.lucide) lucide.createIcons();
+            }
+
+            Object.keys(teacherMap).forEach(t => {
+                const tEl = document.createElement('div');
+                tEl.className = 'text-xs px-2 py-2.5 cursor-pointer hover:bg-slate-100 border-b border-black/5 transition flex justify-between items-center text-slate-700';
+                tEl.innerHTML = `<span class="truncate font-bold">${t}</span> <i data-lucide="chevron-right" class="w-3 h-3 text-slate-300"></i>`;
+                
+                tEl.onmouseenter = () => {
+                    if (activeTeacherEl) {
+                        activeTeacherEl.classList.remove('bg-white', 'text-indigo-600');
+                        activeTeacherEl.classList.add('bg-slate-50', 'text-slate-700');
+                    }
+                    activeTeacherEl = tEl;
+                    tEl.classList.remove('bg-slate-50', 'text-slate-700');
+                    tEl.classList.add('bg-white', 'text-indigo-600');
+                    renderRightPane(t);
+                };
+                
+                tEl.onclick = (e) => {
+                    e.stopPropagation();
+                    const courses = teacherMap[t] || [];
+                    if (courses.length > 0) {
+                        const firstCourse = courses[0];
+                        hidden.value = firstCourse.id;
+                        const newTxt = `${firstCourse.teacher_name} - ${firstCourse.course_name}`;
+                        btn.querySelector('span').textContent = newTxt;
+                        btn.querySelector('span').title = newTxt;
+                        if (onchangeCallback) onchangeCallback(firstCourse.id);
+                    }
+                    popup.classList.add('hidden');
+                    currentOpenDropdown = null;
+                };
+                
+                leftPane.appendChild(tEl);
+            });
+
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const isHidden = popup.classList.contains('hidden');
+                if (currentOpenDropdown && currentOpenDropdown.container !== container) {
+                     currentOpenDropdown.popup?.classList.add('hidden');
+                }
+                if (isHidden) {
+                    popup.classList.remove('hidden');
+                    currentOpenDropdown = { container, popup };
+                    
+                    const rect = btn.getBoundingClientRect();
+                    let top = rect.bottom + window.scrollY;
+                    let left = rect.left + window.scrollX;
+                    
+                    // 挂载到 body 后，计算屏幕边缘溢出
+                    if (left + 360 > window.innerWidth) {
+                        left = window.innerWidth - 370; // 留 10px 边距
+                    }
+                    if (rect.bottom + 240 > window.innerHeight) {
+                        // 如果下方空间不够，放在上方
+                        top = rect.top + window.scrollY - 240 - 4;
+                    }
+                    popup.style.top = top + 'px';
+                    popup.style.left = left + 'px';
+
+                    const currentC = combos.find(c => c.id == hidden.value);
+                    const initialT = currentC ? currentC.teacher_name : Object.keys(teacherMap)[0];
+                    if (initialT) {
+                        const children = Array.from(leftPane.children);
+                        const targetEl = children.find(el => el.querySelector('span').textContent === initialT);
+                        if (targetEl && targetEl !== activeTeacherEl) {
+                            targetEl.onmouseenter();
+                            targetEl.scrollIntoView({ block: 'nearest' });
+                        }
+                    }
+                } else {
+                    popup.classList.add('hidden');
+                    currentOpenDropdown = null;
+                }
+            };
+            
+            if (window.lucide) lucide.createIcons();
+        }
 
         // 行点击展开编辑（月度/周度通用）— 内联编辑
         async function toggleRowEdit(schId) {
@@ -1884,20 +2092,18 @@
             container.innerHTML = '<span style="font-size:10px;color:#94a3b8;">加载中...</span>';
 
             try {
-                // 并行加载课程详情、combos、班主任、课题列表
+                // 并行加载课程详情、combos、班主任
                 const schedResp = await fetch(`${API_BASE}/schedule/${schId}`);
                 if (!schedResp.ok) throw new Error('获取失败');
                 const sch = await schedResp.json();
 
-                const [combosResp, hrResp, topicsResp, locResp] = await Promise.all([
+                const [combosResp, hrResp, locResp] = await Promise.all([
                     fetch(`${API_BASE}/combos?topic_id=${sch.topic_id}`),
                     fetch(`${API_BASE}/homerooms`),
-                    fetch(`${API_BASE}/topics?project_id=${sch.project_id}`),
-                    fetch(`${API_BASE}/schedule/${schId}/available-locations`)
+                    fetch(`${API_BASE}/schedule/${schId}/available-locations`),
                 ]);
                 const combos = await combosResp.json();
                 const homerooms = await hrResp.json();
-                const topics = await topicsResp.json();
                 const locData = locResp.ok ? await locResp.json() : null;
 
                 // 检测同日忙碌班主任
@@ -1912,53 +2118,72 @@
                     });
                 }
 
-                // 渲染内联编辑
-                const c1Obj = combos.find(c => c.id === sch.combo_id);
-                const c2Obj = combos.find(c => c.id === sch.combo_id_2);
-                const c1Label = c1Obj ? `${c1Obj.teacher_name}-${c1Obj.course_name}` : '--点击选择--';
-                const c2Label = c2Obj ? `${c2Obj.teacher_name}-${c2Obj.course_name}` : '--点击选择--';
                 const hrOpts = homerooms.map(h => {
                     const busy = busyHr[h.name];
                     return `<option value="${h.id}" ${h.name === (sch.homeroom_name || '') ? 'selected' : ''} ${busy ? 'style="color:#dc2626;"' : ''}>${h.name}${busy ? ' ⚠️(' + busy + ')' : ''}</option>`;
                 }).join('');
-                const topicOpts = topics.map(t => `<option value="${t.id}" ${t.id === sch.topic_id ? 'selected' : ''}>${t.name}</option>`).join('');
                 let locOpts = '';
                 if (locData && locData.locations) {
                     const curLocId = locData.current_location_id || locData.default_location_id;
                     locOpts = locData.locations.map(loc => {
                         const sel = loc.id === curLocId ? 'selected' : '';
                         const dis = loc.is_disabled ? 'disabled' : '';
-                        const hint = loc.is_disabled ? ' (已去过)' : '';
-                        return `<option value="${loc.id}" ${sel} ${dis}>${loc.name}${hint}</option>`;
+                        const hint = loc.is_disabled ? ` - (原因: ${loc.reason || '已去过'})` : '';
+                        const style = loc.is_disabled ? 'color:#94a3b8;' : '';
+                        return `<option value="${loc.id}" ${sel} ${dis} style="${style}">${loc.name}${hint}</option>`;
                     }).join('');
                 }
 
-                const ss = 'font-size:10px;padding:1px 4px;border:1px solid #e2e8f0;border-radius:3px;max-width:140px;';
+                // 确保列表包含当前已存的 combo，并在跨课题遗留错误时标红提示
+                if (sch.combo && !combos.find(c => c.id === sch.combo_id)) {
+                    sch.combo.is_invalid_legacy = true;
+                    combos.push(sch.combo);
+                }
+                if (sch.combo_2 && !combos.find(c => c.id === sch.combo_id_2)) {
+                    sch.combo_2.is_invalid_legacy = true;
+                    combos.push(sch.combo_2);
+                }
+
+                const ss = 'font-size:10px;padding:1px 4px;border:1px solid #e2e8f0;border-radius:3px;';
                 const ls = 'font-size:9px;color:#64748b;margin-right:2px;';
+
                 container.innerHTML = `
-                    <span style="${ls}">日期</span><input type="date" id="ie-date-${schId}" value="${sch.scheduled_date}" style="${ss}width:110px;">
-                    <span style="${ls}">课题</span><select id="ie-topic-${schId}" style="${ss}max-width:120px;" data-orig="${sch.topic_id}">${topicOpts}</select>
-                    <span style="${ls}">第一天</span>
-                    <button type="button" id="ie-c1-btn-${schId}" style="${ss}max-width:140px;background:#fff;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;" onclick="ComboPicker.open(document.getElementById('ie-c1-${schId}').value, (id, text) => { document.getElementById('ie-c1-${schId}').value = id; this.textContent = text; }, '选择第一天课程', currentTrainingTypeId)">${c1Label}</button>
-                    <input type="hidden" id="ie-c1-${schId}" value="${sch.combo_id || ''}">
-                    
-                    <span style="${ls}">第二天</span>
-                    <button type="button" id="ie-c2-btn-${schId}" style="${ss}max-width:140px;background:#fff;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;" onclick="ComboPicker.open(document.getElementById('ie-c2-${schId}').value, (id, text) => { document.getElementById('ie-c2-${schId}').value = id; this.textContent = text; }, '选择第二天课程', currentTrainingTypeId)">${c2Label}</button>
-                    <input type="hidden" id="ie-c2-${schId}" value="${sch.combo_id_2 || ''}">
+                    <span style="${ls}">日期</span><input type="date" id="ie-date-${schId}" value="${sch.scheduled_date}" data-orig="${sch.scheduled_date}" style="${ss}width:110px;">
+                    <span style="${ls}">第1天</span><div id="ie-casc-d1-${schId}" class="inline-flex"></div>
+                    <span style="${ls}">第2天</span><div id="ie-casc-d2-${schId}" class="inline-flex"></div>
                     <span style="${ls}">班主任</span><select id="ie-hr-${schId}" style="${ss}">${hrOpts}</select>
                     ${locOpts ? `<span style="${ls}">地点</span><select id="ie-loc-${schId}" style="${ss}">${locOpts}</select>` : ''}
-                    <button onclick="saveInlineEdit(${schId});event.stopPropagation();" style="font-size:10px;padding:2px 10px;background:#4f46e5;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;">保存</button>
+                    <button onclick="saveInlineEdit(${schId});event.stopPropagation();" style="font-size:10px;padding:2px 10px;background:#4f46e5;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;margin-left:4px;">保存</button>
                 `;
+
+                // 注入级联选择器
+                renderCascadingComboSelect(`ie-casc-d1-${schId}`, combos, sch.combo_id, `ie-c-c1-${schId}`);
+                renderCascadingComboSelect(`ie-casc-d2-${schId}`, combos, sch.combo_id_2, `ie-c-c2-${schId}`);
+
                 editRow.dataset.loaded = '1';
             } catch (e) {
                 container.innerHTML = '<span style="font-size:10px;color:#dc2626;">加载失败: ' + e.message + '</span>';
             }
         }
 
+
+
+        // 内联编辑：课题变更时重置 combo 按钮（已废弃，保留兼容）
+        function onInlineTopicChange(schId, newTopicId) {
+            const c1 = document.getElementById('ie-c-c1-' + schId);
+            const c2 = document.getElementById('ie-c-c2-' + schId);
+            const c1Btn = document.getElementById('ie-c1-btn-' + schId);
+            const c2Btn = document.getElementById('ie-c2-btn-' + schId);
+            if (c1) c1.value = '';
+            if (c2) c2.value = '';
+            if (c1Btn) { c1Btn.textContent = '--请重新选择--'; c1Btn.style.color = '#ef4444'; }
+            if (c2Btn) { c2Btn.textContent = '--请重新选择--'; c2Btn.style.color = '#ef4444'; }
+        }
+
         async function saveInlineEdit(schId) {
             const newDate = document.getElementById('ie-date-' + schId)?.value;
-            const comboId = document.getElementById('ie-c1-' + schId)?.value;
-            const combo2Id = document.getElementById('ie-c2-' + schId)?.value;
+            const comboEl = document.getElementById('ie-c-c1-' + schId);
+            const combo2El = document.getElementById('ie-c-c2-' + schId);
             const hrId = document.getElementById('ie-hr-' + schId)?.value;
             const locEl = document.getElementById('ie-loc-' + schId);
             const locId = locEl ? locEl.value : null;
@@ -1979,16 +2204,12 @@
             try {
                 const payload = { schedule_id: schId };
                 if (userConfirmedNonSaturday) payload.force = true;
-                if (newDate) payload.new_date = newDate;
-                if (comboId) payload.combo_id = parseInt(comboId);
-                if (combo2Id) payload.combo_id_2 = parseInt(combo2Id);
+                const origDate = document.getElementById('ie-date-' + schId)?.dataset.orig;
+                if (newDate && newDate !== origDate) payload.new_date = newDate;
+                if (comboEl) payload.combo_id = comboEl.value ? parseInt(comboEl.value) : null;
+                if (combo2El) payload.combo_id_2 = combo2El.value ? parseInt(combo2El.value) : null;
                 if (hrId) payload.homeroom_override_id = parseInt(hrId);
                 if (locId) payload.location_id = parseInt(locId);
-                // 跨课题：发送 topic_id
-                const topicSel = document.getElementById('ie-topic-' + schId);
-                if (topicSel && topicSel.value && topicSel.dataset.orig && parseInt(topicSel.value) !== parseInt(topicSel.dataset.orig)) {
-                    payload.topic_id = parseInt(topicSel.value);
-                }
 
                 const resp = await fetch(`${API_BASE}/schedule/adjust`, {
                     method: 'POST',
@@ -2002,6 +2223,10 @@
                 const result = await resp.json();
                 if (resp.status === 409) {
                     await showAlert('冲突提示', '❌ ' + (result.error || '存在冲突'));
+                    return;
+                }
+                if (!resp.ok) {
+                    showToast('保存失败: ' + (result.error || result.message || '系统错误'), 'error');
                     return;
                 }
                 // 后端返回冲突警告（200 + conflict_type）：此时修改并未落库，需要用户确认后 force 保存
@@ -2023,7 +2248,6 @@
                     }
                     showToast('✅ 已强制保存（冲突状态）', 'success');
                     loadMonthSchedule();
-                    if (currentClassId) openClassScheduleModal(currentClassId);
                     return;
                 }
                 if (result.warning) {
@@ -2031,7 +2255,6 @@
                 }
                 showToast('✅ 已保存', 'success');
                 loadMonthSchedule();
-                if (currentClassId) openClassScheduleModal(currentClassId);
             } catch (e) {
                 showToast('保存失败: ' + e.message, 'error');
             }
@@ -2267,8 +2490,8 @@
                 if (project.topics && project.topics.length > 0) {
                     container.innerHTML = project.topics.map(t => `
                         <label class="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
-                            <input type="checkbox" name="${containerId}-cb" value="${t.id}" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer">
-                            <span class="text-xs font-medium text-slate-700 select-none">${t.name}</span>
+                            <input type="checkbox" name="${containerId}-cb" value="${t.id}" ${t.is_other ? '' : 'checked'} class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer">
+                            <span class="text-xs font-medium text-slate-700 select-none">${t.name}${t.is_other ? ' <span class="text-[9px] text-slate-400">(可重复)</span>' : ''}</span>
                         </label>
                     `).join('');
                 } else {
@@ -2312,10 +2535,10 @@
             const prevVal = sel.value; // 保留当前选中的项目
             sel.innerHTML = '<option value="">-- 选择项目 --</option>' +
                 data.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-            if (prevVal) {
+            if (prevVal && data.some(p => p.id.toString() === prevVal)) {
                 sel.value = prevVal; // 恢复之前的选择
-            } else if (data.length === 1) {
-                sel.value = data[0].id; // 只有一个项目时自动选中
+            } else if (data.length > 0) {
+                sel.value = data[0].id; // 默认选中第一个项目
             }
             loadInitClasses();
         }
@@ -2605,7 +2828,10 @@
             containerEl.classList.add('hidden');
             actionsEl.classList.add('hidden');
 
-            await ComboPicker.loadData();
+            try {
+                const combosResp = await fetch(`${API_BASE}/combos`);
+                if(combosResp.ok) window._allCombos = await combosResp.json();
+            } catch(e) {}
 
             const resp = await fetch(`${API_BASE}/init/class-status/${classId}`);
             const data = await resp.json();
@@ -2640,10 +2866,15 @@
                 document.getElementById('init-start-date').value = lastSat.toISOString().split('T')[0];
             }
 
-            // Populate the "Add Topic" dropdown
+            // Populate the "Add Topic" dropdown（过滤已排课的非其他课题）
             const addTopicSelect = document.getElementById('init-add-topic-select');
             addTopicSelect.innerHTML = '<option value="">-- 选择附加课题 --</option>' + 
-                data.topics.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
+                data.topics.map((t, i) => {
+                    const hasSchedule = t.existing_schedules && t.existing_schedules.length > 0;
+                    const isOther = t.is_other;
+                    const isDisabled = hasSchedule && !isOther;
+                    return `<option value="${i}" ${isDisabled ? 'disabled style="color:#94a3b8;"' : ''}>${t.name}${isOther ? '（可重复）' : ''}${isDisabled ? '（已排课）' : ''}</option>`;
+                }).join('');
             addTopicSelect.classList.remove('hidden');
 
             // Render topics (always expanded, drag-drop, no checkbox)
@@ -2677,11 +2908,7 @@
                                 <div class="p-2 rounded-lg bg-blue-50/50 border border-blue-100">
                                     <div class="flex gap-2 items-center">
                                         <span class="text-[10px] font-bold text-blue-600 w-10 flex-shrink-0">第一天</span>
-                                        <button type="button" onclick="ComboPicker.open(document.getElementById('init-combo1-${t.id}-${gIdx}').value, (id, text) => { document.getElementById('init-combo1-${t.id}-${gIdx}').value = id; document.getElementById('init-c1-txt-${t.id}-${gIdx}').textContent = text; updateInitBtnCount(); }, '为第一天安排选择课程', currentTrainingTypeId)" class="flex-1 text-xs px-2 py-1.5 border border-blue-200 rounded-lg bg-white hover:bg-slate-50 flex justify-between items-center text-left min-w-0 transition shadow-sm">
-                                            <span id="init-c1-txt-${t.id}-${gIdx}" class="truncate text-slate-700 font-medium">${c1Text}</span>
-                                            <i data-lucide="chevron-right" class="w-3 h-3 text-slate-400 shrink-0 ml-1"></i>
-                                        </button>
-                                        <input type="hidden" id="init-combo1-${t.id}-${gIdx}" value="${existing && existing.combo_id ? existing.combo_id : ''}">
+                                        <div id="init-casc-1-${t.id}-${gIdx}" class="flex-1 min-w-0"></div>
                                         <input id="init-date-${t.id}-${gIdx}" type="date" class="text-xs p-1.5 border rounded-lg w-36 flex-shrink-0" value="${existing && existing.scheduled_date ? existing.scheduled_date : ''}" onchange="updateDay2Date('${t.id}-${gIdx}')">
                                         <span class="text-[10px] text-slate-400 init-date-auto-label flex-shrink-0">(自动)</span>
                                     </div>
@@ -2689,11 +2916,7 @@
                                 <div class="p-2 rounded-lg bg-orange-50/50 border border-orange-100">
                                     <div class="flex gap-2 items-center">
                                         <span class="text-[10px] font-bold text-orange-600 w-10 flex-shrink-0">第二天</span>
-                                        <button type="button" onclick="ComboPicker.open(document.getElementById('init-combo2-${t.id}-${gIdx}').value, (id, text) => { document.getElementById('init-combo2-${t.id}-${gIdx}').value = id; document.getElementById('init-c2-txt-${t.id}-${gIdx}').textContent = text; updateInitBtnCount(); }, '为第二天安排选择课程', currentTrainingTypeId)" class="flex-1 text-xs px-2 py-1.5 border border-orange-200 rounded-lg bg-white hover:bg-slate-50 flex justify-between items-center text-left min-w-0 transition shadow-sm">
-                                            <span id="init-c2-txt-${t.id}-${gIdx}" class="truncate text-slate-700 font-medium">${c2Text}</span>
-                                            <i data-lucide="chevron-right" class="w-3 h-3 text-slate-400 shrink-0 ml-1"></i>
-                                        </button>
-                                        <input type="hidden" id="init-combo2-${t.id}-${gIdx}" value="${existing && existing.combo_id_2 ? existing.combo_id_2 : ''}">
+                                        <div id="init-casc-2-${t.id}-${gIdx}" class="flex-1 min-w-0"></div>
                                         <span id="init-day2-date-${t.id}-${gIdx}" class="text-xs font-medium text-orange-600 w-36 text-center flex-shrink-0">${existing && existing.scheduled_date ? calcNextDay(existing.scheduled_date) : ''}</span>
                                         <span class="text-[10px] text-slate-400 init-date-auto-label flex-shrink-0">(+1天)</span>
                                     </div>
@@ -2718,6 +2941,19 @@
                 });
             });
             containerEl.innerHTML = cardHtml;
+            // Now render cascades
+            gIdx = 0;
+            _initTopicsData.forEach(topic => {
+                const existingSchedules = topic.existing_schedules || [];
+                const len = Math.max(1, existingSchedules.length);
+                const topicCombos = (window._allCombos || []).filter(c => c.topic_id == topic.id);
+                for(let i=0; i<len; i++) {
+                    const existing = existingSchedules[i] || null;
+                    renderCascadingComboSelect(`init-casc-1-${topic.id}-${gIdx}`, topicCombos, existing ? existing.combo_id : null, `init-combo1-${topic.id}-${gIdx}`, () => { updateInitBtnCount(); updateDay2Date(`${topic.id}-${gIdx}`); });
+                    renderCascadingComboSelect(`init-casc-2-${topic.id}-${gIdx}`, topicCombos, existing ? existing.combo_id_2 : null, `init-combo2-${topic.id}-${gIdx}`, () => { updateInitBtnCount(); });
+                    gIdx++;
+                }
+            });
 
             containerEl.classList.remove('hidden');
             actionsEl.classList.remove('hidden');
@@ -2941,22 +3177,14 @@
                     <div class="p-2 rounded-lg bg-blue-50/50 border border-blue-100">
                         <div class="flex gap-2 items-center">
                             <span class="text-[10px] font-bold text-blue-600 w-10 flex-shrink-0">第一天</span>
-                            <button type="button" onclick="ComboPicker.open(document.getElementById('init-combo1-${t.id}-new${cardCount}').value, (id, text) => { document.getElementById('init-combo1-${t.id}-new${cardCount}').value = id; document.getElementById('init-c1-txt-${t.id}-new${cardCount}').textContent = text; updateInitBtnCount(); }, '为第一天安排选择课程', currentTrainingTypeId)" class="flex-1 text-xs px-2 py-1.5 border border-blue-200 rounded-lg bg-white hover:bg-slate-50 flex justify-between items-center text-left min-w-0 transition shadow-sm">
-                                <span id="init-c1-txt-${t.id}-new${cardCount}" class="truncate text-slate-700 font-medium">-- 点击选用排课 --</span>
-                                <i data-lucide="chevron-right" class="w-3 h-3 text-slate-400 shrink-0 ml-1"></i>
-                            </button>
-                            <input type="hidden" id="init-combo1-${t.id}-new${cardCount}" value="">
+                            <div id="init-casc-1-${t.id}-new${cardCount}" class="flex-1 min-w-0"></div>
                             <input id="init-date-${t.id}-new${cardCount}" type="date" class="text-xs p-1.5 border rounded-lg w-36 flex-shrink-0">
                         </div>
                     </div>
                     <div class="p-2 rounded-lg bg-orange-50/50 border border-orange-100">
                         <div class="flex gap-2 items-center">
                             <span class="text-[10px] font-bold text-orange-600 w-10 flex-shrink-0">第二天</span>
-                            <button type="button" onclick="ComboPicker.open(document.getElementById('init-combo2-${t.id}-new${cardCount}').value, (id, text) => { document.getElementById('init-combo2-${t.id}-new${cardCount}').value = id; document.getElementById('init-c2-txt-${t.id}-new${cardCount}').textContent = text; updateInitBtnCount(); }, '为第二天安排选择课程', currentTrainingTypeId)" class="flex-1 text-xs px-2 py-1.5 border border-orange-200 rounded-lg bg-white hover:bg-slate-50 flex justify-between items-center text-left min-w-0 transition shadow-sm">
-                                <span id="init-c2-txt-${t.id}-new${cardCount}" class="truncate text-slate-700 font-medium">-- 点击选用排课 --</span>
-                                <i data-lucide="chevron-right" class="w-3 h-3 text-slate-400 shrink-0 ml-1"></i>
-                            </button>
-                            <input type="hidden" id="init-combo2-${t.id}-new${cardCount}" value="">
+                            <div id="init-casc-2-${t.id}-new${cardCount}" class="flex-1 min-w-0"></div>
                         </div>
                     </div>
                     <div class="flex gap-4 items-center px-1 pt-1">
@@ -2972,6 +3200,9 @@
                     </div>
                 </div>`;
             container.appendChild(newCard);
+            const topicCombos = (window._allCombos || []).filter(c => c.topic_id == t.id);
+            renderCascadingComboSelect(`init-casc-1-${t.id}-new${cardCount}`, topicCombos, null, `init-combo1-${t.id}-new${cardCount}`, () => { updateInitBtnCount(); });
+            renderCascadingComboSelect(`init-casc-2-${t.id}-new${cardCount}`, topicCombos, null, `init-combo2-${t.id}-new${cardCount}`, () => { updateInitBtnCount(); });
             updateInitBtnCount();
             showToast(`已添加课题「${t.name}」，请选择组合和日期`, 'success');
         }
@@ -3495,11 +3726,11 @@
 
                     const day1Teacher = s.combo ? s.combo.teacher_name : '待定';
                     const day1Course = s.combo ? s.combo.course_name : '';
-                    const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : day1Teacher;
-                    const day2Course = s.combo_2 ? s.combo_2.course_name : day1Course;
+                    const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : '待定';
+                    const day2Course = s.combo_2 ? s.combo_2.course_name : '';
                     const sameDate = schedules.filter(x => x.id !== s.id && !x.merged_with && x.scheduled_date === s.scheduled_date);
                     const d1Conflict = day1Teacher !== '待定' && sameDate.find(x => x.combo && x.combo.teacher_name === day1Teacher);
-                    const d2Conflict = day2Teacher !== '待定' && sameDate.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : (x.combo ? x.combo.teacher_name : null); return t === day2Teacher; });
+                    const d2Conflict = day2Teacher !== '待定' && sameDate.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : null; return t === day2Teacher; });
                     const hrName = s.homeroom_name || '未分配';
                     const hrSameDate = sameDate.filter(x => x.homeroom_name === hrName);
                     const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
@@ -4143,24 +4374,46 @@
                         // 前端实时冲突检测
                         const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
                         const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
-                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
+                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
+                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
                         const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
                         const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
                         const d2Conflict = day2Teacher !== '待定' && others.find(x => {
-                            const xt2 = x.combo_2 ? x.combo_2.teacher_name : (x.combo ? x.combo.teacher_name : null);
+                            const xt2 = x.combo_2 ? x.combo_2.teacher_name : null;
                             return xt2 === day2Teacher;
                         });
                         const hrName = sch.homeroom_name || '未分配';
                         const hrSameDate = others.filter(x => x.homeroom_name === hrName);
                         const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
                         const hasDbConflict = sch.conflict_type != null;
-                        const hasAnyConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
 
-                        // 行样式
+                        // S5: 班主任连续带班间隔 < 2周 检测（跨周比对）
+                        let hrGapWarning = false;
+                        let hrGapDetail = '';
+                        if (hrName !== '未分配' && !hrConflict && cachedMonthData && cachedMonthData.weeks) {
+                            const thisWeekIdx = cachedMonthData.weeks.indexOf(w);
+                            for (const delta of [-1, 1]) {
+                                const adjWeek = cachedMonthData.weeks[thisWeekIdx + delta];
+                                if (adjWeek && adjWeek.schedules) {
+                                    const adjHrMatch = adjWeek.schedules.find(x => x.homeroom_name === hrName && x.id !== sch.id && !x.merged_with);
+                                    if (adjHrMatch) {
+                                        hrGapWarning = true;
+                                        hrGapDetail = `班主任连续带班(与${adjHrMatch.class_name}间隔<2周)`;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 硬冲突 vs 软警告
+                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                        const hasSoftWarning = hrGapWarning;
+
+                        // 行样式：硬冲突红色，软警告橙色
                         let rowClass = '';
                         if (isSelected || (isMergeMode && selectedMergeIds.has(sch.id))) rowClass = 'row-selected';
-                        else if (hasAnyConflict) rowClass = 'row-conflict';
+                        else if (hasHardConflict) rowClass = 'row-conflict';
+                        else if (hasSoftWarning) rowClass = 'row-warning';
                         else if (isMerged) rowClass = 'row-merged';
                         else if (isCompleted) rowClass = 'row-completed';
                         else if (isConfirmed) rowClass = 'row-confirmed';
@@ -4205,8 +4458,9 @@
                         if (sch.interval_days != null) {
                             const d = sch.interval_days;
                             let color = '#16a34a'; let icon = '✅';
-                            if (d > 42) { color = '#dc2626'; icon = '🔴'; }
-                            else if (d > 35 || d < 21) { color = '#ea580c'; icon = '⚠️'; }
+                            if (d > 45) { color = '#dc2626'; icon = '🔴'; }
+                            else if (d < 25) { color = '#dc2626'; icon = '🔴'; }
+                            else if (d < 30) { color = '#ea580c'; icon = '⚠️'; }
                             intervalHtml = `<span style="color:${color};font-weight:700;font-size:9px;">${d}天${icon}</span>`;
                         }
 
@@ -4243,7 +4497,7 @@
                             <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
                             <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
                             <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
-                            <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
+                            <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : hrGapWarning ? 'color:#ea580c;' : ''}" ${hrGapWarning ? `title="${hrGapDetail}"` : ''}>${hrName}${hrConflict ? '🔴' : hrGapWarning ? '⚠️' : ''}</td>
                             <td><span style="font-size:10px;color:#7c3aed;">${_locName || sch.city_name || '未设置'}</span></td>
                             <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
                             <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''}${(!isPast && !isCompleted && !isMerged) ? ` <button onclick="openSwapTopicModal(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:3px;cursor:pointer;">🔄交换</button>` : ''} ${mergeSuggestHtml}</td>
@@ -4357,9 +4611,12 @@
                 // 填充上课地点（合班班级默认地点合集）
                 const mergeLocSelect = document.getElementById('merge-location-select');
                 if (info.locations && info.locations.length) {
-                    mergeLocSelect.innerHTML = info.locations.map(loc =>
-                        `<option value="${loc.location_id}">${loc.name}（来自${loc.from_class}）</option>`
-                    ).join('');
+                    mergeLocSelect.innerHTML = info.locations.map(loc => {
+                        const dis = loc.is_disabled ? 'disabled' : '';
+                        const hint = loc.is_disabled ? ` - (原因: ${loc.reason || '已去过'})` : '';
+                        const style = loc.is_disabled ? 'color:#94a3b8;' : '';
+                        return `<option value="${loc.location_id}" ${dis} style="${style}">${loc.name}（来自${loc.from_class}）${hint}</option>`;
+                    }).join('');
                 } else {
                     mergeLocSelect.innerHTML = '<option value="">-- 无可用地点 --</option>';
                 }
@@ -4479,11 +4736,11 @@
                     // 冲突检测
                     const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
                     const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                    const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : day1Teacher;
-                    const day2Course = sch.combo_2 ? sch.combo_2.course_name : day1Course;
+                    const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
+                    const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
                     const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
                     const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
-                    const d2Conflict = day2Teacher !== '待定' && others.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : (x.combo ? x.combo.teacher_name : null); return t === day2Teacher; });
+                    const d2Conflict = day2Teacher !== '待定' && others.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : null; return t === day2Teacher; });
                     const hrName = sch.homeroom_name || '未分配';
                     const hrSameDate = others.filter(x => x.homeroom_name === hrName);
                     const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
@@ -5101,9 +5358,12 @@
                 // 填充上课地点（合班班级默认地点合集）
                 const mergeLocSelect = document.getElementById('merge-location-select');
                 if (info.locations && info.locations.length) {
-                    mergeLocSelect.innerHTML = info.locations.map(loc =>
-                        `<option value="${loc.location_id}">${loc.name}（来自${loc.from_class}）</option>`
-                    ).join('');
+                    mergeLocSelect.innerHTML = info.locations.map(loc => {
+                        const dis = loc.is_disabled ? 'disabled' : '';
+                        const hint = loc.is_disabled ? ` - (原因: ${loc.reason || '已去过'})` : '';
+                        const style = loc.is_disabled ? 'color:#94a3b8;' : '';
+                        return `<option value="${loc.location_id}" ${dis} style="${style}">${loc.name}（来自${loc.from_class}）${hint}</option>`;
+                    }).join('');
                 } else {
                     mergeLocSelect.innerHTML = '<option value="">-- 无可用地点 --</option>';
                 }
@@ -5297,6 +5557,7 @@
                     <div class="text-xs text-slate-500 mt-1">当前排课: 周六 ${schedule.scheduled_date} / 周日 ${sunStr}</div>
                 `;
                 document.getElementById('adjust-new-date').value = schedule.scheduled_date;
+                document.getElementById('adjust-new-date').dataset.orig = schedule.scheduled_date;
                 // 日期提示
                 const dateHint = document.getElementById('adjust-date-hint');
                 if (dateHint) {
@@ -5316,32 +5577,55 @@
                 const topicSelect = document.getElementById('adjust-topic');
                 const topicHint = document.getElementById('adjust-topic-hint');
 
-                // 并行加载：课题列表、所有组合、班主任、可选地点
-                const [topicsResp, allCombosResp, hrResp, locResp] = await Promise.all([
+                // 并行加载：课题列表、所有组合、班主任、可选地点、班级排课(用于课题过滤)
+                const [topicsResp, allCombosResp, hrResp, locResp, classResp] = await Promise.all([
                     fetch(`${API_BASE}/topics?project_id=${schedule.project_id}`),
                     fetch(`${API_BASE}/combos`),
                     fetch(`${API_BASE}/homerooms`),
-                    fetch(`${API_BASE}/schedule/${scheduleId}/available-locations`)
+                    fetch(`${API_BASE}/schedule/${scheduleId}/available-locations`),
+                    fetch(`${API_BASE}/classes/${schedule.class_id}`)
                 ]);
                 const topics = await topicsResp.json();
                 window._allCachedCombos = await allCombosResp.json();
                 const homerooms = await hrResp.json();
                 const locData = await locResp.json();
+                const classData = await classResp.json();
 
-                // 课题选择器 (全局主课题)
-                topicSelect.innerHTML = topics.map(t =>
-                    `<option value="${t.id}" ${t.id === schedule.topic_id ? 'selected' : ''}>${t.name}</option>`
-                ).join('');
+                // 获取该班级已使用的非其他课题ID
+                const usedTopicIds = new Set();
+                (classData.schedules || []).forEach(s => {
+                    if (s.topic_id && !s.topic_is_other) usedTopicIds.add(s.topic_id);
+                });
 
-                // 新版级联列表按钮数据回显
-                document.getElementById('adjust-combo-id').value = schedule.combo_id || '';
-                document.getElementById('adjust-combo2-id').value = schedule.combo_id_2 || '';
-                
-                const c1 = schedule.combo_id ? window._allCachedCombos.find(c => c.id === schedule.combo_id) : null;
-                const c2 = schedule.combo_id_2 ? window._allCachedCombos.find(c => c.id === schedule.combo_id_2) : null;
-                
-                document.getElementById('adjust-sat-text').textContent = c1 ? `${c1.teacher_name} - ${c1.course_name}` : '-- 留空 / 未安排 --';
-                document.getElementById('adjust-sun-text').textContent = c2 ? `${c2.teacher_name} - ${c2.course_name}` : '-- 留空 / 未安排 --';
+                // 课题选择器（过滤已用非其他课题，除了当前记录自身的课题）
+                topicSelect.innerHTML = topics.map(t => {
+                    const isCurrent = (t.id === schedule.topic_id);
+                    const isUsed = !t.is_other && usedTopicIds.has(t.id) && !isCurrent;
+                    return `<option value="${t.id}" ${isCurrent ? 'selected' : ''} ${isUsed ? 'disabled style="color:#94a3b8;"' : ''}>${t.name}${t.is_other ? '（可重复）' : ''}${isUsed ? '（已排课）' : ''}</option>`;
+                }).join('');
+
+                // 课题变更时联动过滤 combo
+                topicSelect.onchange = function() {
+                    const selTopicId = parseInt(this.value);
+                    const filtered = window._allCachedCombos.filter(c => c.topic_id === selTopicId);
+                    // 重置 combo 选择（因为课题变了，老 combo 可能不属于新课题）
+                    document.getElementById('adjust-combo-id').value = '';
+                    document.getElementById('adjust-combo2-id').value = '';
+                    
+                    renderCascadingComboSelect('adjust-cascade-1', filtered, null, 'adjust-combo-id');
+                    renderCascadingComboSelect('adjust-cascade-2', filtered, null, 'adjust-combo2-id');
+
+                    const hint = document.getElementById('adjust-topic-hint');
+                    if (hint) {
+                        hint.textContent = filtered.length === 0 ? '⚠️ 该课题下无讲师/课程组合' : `该课题下有 ${filtered.length} 个可用组合`;
+                        hint.style.color = filtered.length === 0 ? '#ef4444' : '#6366f1';
+                    }
+                };
+
+                // 初始化原有的下拉框
+                const initialFiltered = window._allCachedCombos.filter(c => c.topic_id === schedule.topic_id);
+                renderCascadingComboSelect('adjust-cascade-1', initialFiltered, schedule.combo_id, 'adjust-combo-id');
+                renderCascadingComboSelect('adjust-cascade-2', initialFiltered, schedule.combo_id_2, 'adjust-combo2-id');
 
                 // 4. 班主任（含冲突检测）
                 const hrSelect = document.getElementById('adjust-homeroom');
@@ -5371,7 +5655,7 @@
                     locSelect.innerHTML = locData.locations.map(loc => {
                         const sel = loc.id === currentLocId ? 'selected' : '';
                         const dis = loc.is_disabled ? 'disabled' : '';
-                        const hint = loc.is_disabled ? ` (已去过)` : '';
+                        const hint = loc.is_disabled ? ` - (原因: ${loc.reason || '已去过'})` : '';
                         const style = loc.is_disabled ? 'color:#94a3b8;' : '';
                         return `<option value="${loc.id}" ${sel} ${dis} style="${style}">${loc.name}${hint}</option>`;
                     }).join('');
@@ -5430,10 +5714,40 @@
             }
         }
 
+        function onAdjustTopicChange() {
+            const c1 = document.getElementById('adjust-combo-id');
+            const c2 = document.getElementById('adjust-combo2-id');
+            const c1Text = document.getElementById('adjust-sat-text');
+            const c2Text = document.getElementById('adjust-sun-text');
+            if (c1) c1.value = '';
+            if (c2) c2.value = '';
+            if (c1Text) { c1Text.textContent = '-- 请重新选择配套课程 --'; c1Text.style.color = '#ef4444'; }
+            if (c2Text) { c2Text.textContent = '-- 请重新选择配套课程 --'; c2Text.style.color = '#ef4444'; }
+        }
+
         async function saveAdjustment() {
             const newDate = document.getElementById('adjust-new-date').value;
             const comboId = document.getElementById('adjust-combo-id').value;
             const combo2Id = document.getElementById('adjust-combo2-id').value;
+
+            // 讲师/课程与课题一致性校验（始终校验）
+            const selTopicId = parseInt(document.getElementById('adjust-topic')?.value || _adjustOriginalTopicId);
+            if (selTopicId) {
+                if (comboId) {
+                    const combo1 = (window._allCachedCombos || []).find(c => c.id == comboId);
+                    if (combo1 && combo1.topic_id !== selTopicId) {
+                        showToast('第一天讲师/课程不属于该课题，请重新选择', 'error');
+                        return;
+                    }
+                }
+                if (combo2Id) {
+                    const combo2 = (window._allCachedCombos || []).find(c => c.id == combo2Id);
+                    if (combo2 && combo2.topic_id !== selTopicId) {
+                        showToast('第二天讲师/课程不属于该课题，请重新选择', 'error');
+                        return;
+                    }
+                }
+            }
 
             // 非周六日期：改为确认弹窗而非硬拒绝
             let userConfirmedNonSaturday = false;
@@ -5451,9 +5765,10 @@
             try {
                 const payload = { schedule_id: currentScheduleId };
                 if (userConfirmedNonSaturday) payload.force = true; // 跳过后端重复警告
-                if (newDate) payload.new_date = newDate;
-                if (comboId) payload.combo_id = parseInt(comboId);
-                if (combo2Id) payload.combo_id_2 = parseInt(combo2Id);
+                const origDate = document.getElementById('adjust-new-date').dataset.orig;
+                if (newDate && newDate !== origDate) payload.new_date = newDate;
+                payload.combo_id = comboId ? parseInt(comboId) : null;
+                payload.combo_id_2 = combo2Id ? parseInt(combo2Id) : null;
                 // 跨课题选择：发送新 topic_id
                 const selTopicId = document.getElementById('adjust-topic')?.value;
                 if (selTopicId && _adjustOriginalTopicId && parseInt(selTopicId) !== _adjustOriginalTopicId) {
@@ -5534,10 +5849,24 @@
             ['has-opening', 'has-team', 'has-closing', 'day2-has-opening', 'day2-has-team', 'day2-has-closing'].forEach(id => {
                 document.getElementById('add-session-' + id).checked = false;
             });
+            // 重置推迟选项
+            const postponeEl = document.getElementById('add-session-postpone-section');
+            if (postponeEl) postponeEl.classList.add('hidden');
             try {
-                // 加载该班级所属项目的课题
+                // 加载该班级所属项目的课题 + 已有排课
                 const clsResp = await fetch(`${API_BASE}/classes/${classId}`);
                 const clsData = await clsResp.json();
+                
+                // 获取已用课题ID（排除is_other的课题）
+                const usedTopicIds = new Set();
+                (clsData.schedules || []).forEach(s => {
+                    if (s.topic_id && !s.topic_is_other) usedTopicIds.add(s.topic_id);
+                });
+                // 用全局变量记录已有课次日期用于推迟判断
+                window._addSessionExistingDates = (clsData.schedules || [])
+                    .filter(s => s.scheduled_date)
+                    .map(s => s.scheduled_date)
+                    .sort();
                 
                 const topicsResp = await fetch(`${API_BASE}/topics?project_id=${clsData.project_id}`);
                 const topics = await topicsResp.json();
@@ -5547,7 +5876,10 @@
                 }
                 const topicSelect = document.getElementById('add-session-topic');
                 topicSelect.innerHTML = '<option value="">-- 请选择课题 --</option>' + 
-                    topics.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+                    topics.map(t => {
+                        const isUsed = !t.is_other && usedTopicIds.has(t.id);
+                        return `<option value="${t.id}" ${isUsed ? 'disabled style="color:#94a3b8;"' : ''}>${t.name}${t.is_other ? '（可重复）' : ''}${isUsed ? '（已排课）' : ''}</option>`;
+                    }).join('');
                 
                 // 加载班主任
                 const hrResp = await fetch(`${API_BASE}/homerooms`);
@@ -5567,17 +5899,37 @@
                         locSelect.innerHTML = locData.locations.map(loc => {
                             const sel = loc.is_default ? 'selected' : '';
                             const dis = loc.is_disabled ? 'disabled' : '';
-                            const hint = loc.is_disabled ? ' (已去过)' : '';
+                            const hint = loc.is_disabled ? ` - (原因: ${loc.reason || '已去过'})` : '';
                             const style = loc.is_disabled ? 'color:#94a3b8;' : '';
                             return `<option value="${loc.id}" ${sel} ${dis} style="${style}">${loc.name}${hint}</option>`;
                         }).join('');
                     }
                 } catch(e) { console.warn('load locations failed', e); }
 
+                // 绑定日期变更事件来检查是否需要推迟
+                const dateInput = document.getElementById('add-session-date');
+                dateInput.onchange = function() {
+                    checkPostponeNeeded(this.value);
+                };
+
                 document.getElementById('add-session-modal').classList.add('active');
                 lucide.createIcons();
             } catch(e) {
                 showToast('加载数据失败', 'error');
+            }
+        }
+
+        function checkPostponeNeeded(dateStr) {
+            const section = document.getElementById('add-session-postpone-section');
+            if (!section || !dateStr) { if(section) section.classList.add('hidden'); return; }
+            const existingDates = window._addSessionExistingDates || [];
+            const affectedCount = existingDates.filter(d => d >= dateStr).length;
+            if (affectedCount > 0) {
+                section.classList.remove('hidden');
+                document.getElementById('add-session-postpone-info').textContent = 
+                    `有 ${affectedCount} 个已排课次的日期 ≥ 所选日期，可选择推迟这些课次`;
+            } else {
+                section.classList.add('hidden');
             }
         }
         
@@ -5637,7 +5989,8 @@
                 day2_has_team_building: document.getElementById('add-session-day2-has-team').checked,
                 day2_has_closing: document.getElementById('add-session-day2-has-closing').checked,
                 notes: document.getElementById('add-session-notes').value,
-                location_id: document.getElementById('add-session-location').value ? parseInt(document.getElementById('add-session-location').value) : null
+                location_id: document.getElementById('add-session-location').value ? parseInt(document.getElementById('add-session-location').value) : null,
+                postpone_weeks: parseInt(document.getElementById('add-session-postpone-weeks')?.value || '0')
             };
             
             try {
@@ -5648,7 +6001,9 @@
                 });
                 const result = await resp.json();
                 if(!resp.ok) throw new Error(result.error || '创建失败');
-                showToast('增加课次成功', 'success');
+                let msg = '增加课次成功';
+                if (result.postpone_message) msg += '，' + result.postpone_message;
+                showToast(msg, 'success');
                 closeAddSessionModal();
                 loadMonthSchedule();
                 openClassScheduleModal(currentClassId);
@@ -6269,7 +6624,16 @@
                 ];
                 projectDropdowns.forEach(id => {
                     const el = document.getElementById(id);
-                    if (el) el.innerHTML = projectOpts;
+                    if (el) {
+                        const prevVal = el.value;
+                        el.innerHTML = projectOpts;
+                        if (prevVal && data.some(p => p.id.toString() === prevVal)) {
+                            el.value = prevVal;
+                        } else if (data.length > 0) {
+                            el.value = data[0].id;
+                            el.dispatchEvent(new Event('change'));
+                        }
+                    }
                 });
             } catch (e) {
                 document.getElementById('projects-list').innerHTML = '<div class="text-red-500 text-xs p-2">加载失败</div>';
@@ -6548,7 +6912,7 @@
                     }).then(r => { if(!r.ok) throw new Error() })
                 ));
                 showToast(`成功添加 ${selected.length} 门课程`);
-                ComboPicker.allCombos = [];
+                window._allCombos = null;
                 loadTopics();
             } catch (e) {
                 showToast('部分或全部添加失败', 'error');
@@ -6766,7 +7130,7 @@
                     }).then(r => { if(!r.ok) throw new Error() })
                 ));
                 showToast(`成功批量添加 ${selected.length} 个课程组合`);
-                ComboPicker.allCombos = [];
+                window._allCombos = null;
                 loadTopics();
             } catch (e) {
                 showToast('部分或全部添加失败', 'error');
@@ -6779,7 +7143,7 @@
                 const resp = await fetch(`${API_BASE}/combos/${comboId}`, { method: 'DELETE' });
                 if (resp.ok) {
                     showToast('已移除该组合');
-                    ComboPicker.allCombos = []; // 刷新缓存
+                    window._allCombos = null; // 刷新缓存
                     loadTopics();
                 } else {
                     const err = await resp.json();
@@ -6976,7 +7340,28 @@
             loadMonthSchedule(); // 刷新月度数据
         }
 
-
+        function scrollToPreviewRow(classId, topicId) {
+            const targetId = `preview-row-${classId}-${topicId}`;
+            const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
+            
+            // 确保所有的包裹 details 是打开的
+            const detailsWraps = document.querySelectorAll('#preview-cards-container details');
+            detailsWraps.forEach(d => { d.open = true; });
+            
+            // 滚动到该元素，留一点顶部边距
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // 高亮闪烁动画
+            targetEl.style.transition = 'background-color 0.5s ease';
+            const originalBg = targetEl.style.backgroundColor;
+            targetEl.style.backgroundColor = '#fef08a'; // yellow-200
+            setTimeout(() => {
+                targetEl.style.backgroundColor = originalBg;
+                // 清除内联以便恢复类名控制
+                setTimeout(() => { targetEl.style.backgroundColor = ''; }, 500);
+            }, 1500);
+        }
 
         function renderPreview() {
             if (!previewData) return;
@@ -6999,7 +7384,8 @@
                 `<span class="text-green-600">✅ ${summary.good_interval || 0}</span> 合理 · ` +
                 `<span class="text-orange-500">⚠️ ${summary.long_interval || 0}</span> 偏长 · ` +
                 `<span class="text-red-500">🔴 ${summary.conflicts || 0}</span> 冲突 · ` +
-                `<span class="text-slate-400">⏭️ ${summary.skipped || 0}</span> 跳过`;
+                `<span class="text-slate-400">⏭️ ${summary.skipped || 0}</span> 跳过` +
+                (assignments.some(a => a.is_deferred) ? ` · <span class="text-blue-500">📅 ${assignments.filter(a => a.is_deferred).length}</span> 顺延` : '');
 
             // 问题面板
             const issues = report.issues || [];
@@ -7031,6 +7417,85 @@
             if (scheduled.length === 0 && skipped.length === 0) {
                 cardsContainer.innerHTML = `<div class="text-center text-slate-400 py-6 text-sm">当前所选月份内没有处于【草稿】状态的排课记录需要优化。如需调整处于其他状态的排课，请在主页面直接操作。</div>`;
             } else {
+                // ---- 计算增量变化 Diff ----
+                let diffHtml = '';
+                let changesCount = 0;
+                if (cachedMonthData && cachedMonthData.weeks) {
+                    const oldMap = new Map();
+                    cachedMonthData.weeks.forEach(w => {
+                        (w.schedules || []).forEach(s => {
+                            if (s.status === 'scheduled') {
+                                oldMap.set(`${s.class_id}_${s.topic_id}`, s);
+                            }
+                        });
+                    });
+                    
+                    const diffs = [];
+                    assignments.forEach(a => {
+                        if (a.is_merged_target) return;
+                        const old = oldMap.get(`${a.class_id}_${a.topic_id}`);
+                        if (old) {
+                            let changed = false;
+                            let rowDiff = { class_id: a.class_id, topic_id: a.topic_id, class_name: a.class_name, project_name: a.project_name || '', display_topic_name: a.display_topic_name || a.topic_name, changes: [] };
+                            
+                            if (a.assigned_date && old.scheduled_date && a.assigned_date !== old.scheduled_date) {
+                                changed = true;
+                                rowDiff.changes.push(`🗓日期: ${old.scheduled_date} ➜ <b>${a.assigned_date}</b>`);
+                            }
+                            
+                            const oldTeacher1 = (old.combo && old.combo.teacher_name) || '未分配';
+                            const newTeacher1 = a.combo1_teacher_name || '未分配';
+                            if (oldTeacher1 !== newTeacher1) {
+                                changed = true;
+                                rowDiff.changes.push(`👤周六讲师: ${oldTeacher1} ➜ <b>${newTeacher1}</b>`);
+                            }
+                            
+                            const oldTeacher2 = (old.combo_2 && old.combo_2.teacher_name) || '未分配';
+                            const newTeacher2 = a.combo2_teacher_name || '未分配';
+                            if (oldTeacher2 !== newTeacher2) {
+                                changed = true;
+                                rowDiff.changes.push(`👤周日讲师: ${oldTeacher2} ➜ <b>${newTeacher2}</b>`);
+                            }
+                            
+                            if (changed) diffs.push(rowDiff);
+                        }
+                    });
+                    
+                    changesCount = diffs.length;
+                    if (changesCount > 0) {
+                        diffHtml = `
+                        <details class="bg-white border border-blue-200 rounded-xl shadow-sm mb-4 group" open>
+                            <summary class="px-4 py-3 font-bold text-sm text-slate-700 cursor-pointer hover:bg-slate-50 flex items-center justify-between list-none" style="outline:none;">
+                                <div class="flex items-center gap-2">
+                                    <span class="bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm">${changesCount}</span>
+                                    <span class="text-blue-800">智能调配变动明细</span>
+                                    <span class="text-[11px] font-normal text-slate-400 ml-2">(${changesCount} 个班级的新排期与原草稿不同)</span>
+                                </div>
+                                <svg class="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                            </summary>
+                            <div class="border-t border-blue-100 overflow-x-auto rounded-b-xl">
+                                <table class="w-full text-left text-xs text-slate-600">
+                                    <thead class="bg-blue-50/50 text-slate-500 border-b border-blue-100">
+                                        <tr>
+                                            <th class="px-4 py-2 font-medium">涉及班级</th>
+                                            <th class="px-4 py-2 font-medium">课题</th>
+                                            <th class="px-4 py-2 font-medium">变动详情记录</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${diffs.map(d => `
+                                        <tr class="border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors cursor-pointer" onclick="scrollToPreviewRow('${d.class_id}', '${d.topic_id}')" title="点击跳转至课表详情">
+                                            <td class="px-4 py-2.5 font-bold text-slate-700 min-w[120px]">${d.class_name} <br><span class="text-[10px] font-normal text-slate-400">${d.project_name}</span></td>
+                                            <td class="px-4 py-2.5 min-w-[150px]">${d.display_topic_name}</td>
+                                            <td class="px-4 py-2.5 space-y-1">${d.changes.map(c => `<div class="bg-orange-50/80 text-orange-800 border border-orange-100 px-2 py-0.5 rounded text-[11px] inline-block mr-2 shadow-sm">${c}</div>`).join('')}</td>
+                                        </tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>`;
+                    }
+                }
+
                 // 按周分组
                 const weekGroups = {};
                 scheduled.forEach(a => {
@@ -7081,17 +7546,21 @@
                         let intervalHtml = '<span style="color:#94a3b8;font-size:9px;">首次</span>';
                         if (interval !== null && interval !== undefined) {
                             let color = '#16a34a'; let icon = '✅';
-                            if (interval > 42) { color = '#dc2626'; icon = '🔴'; }
-                            else if (interval > 35 || interval < 21) { color = '#ea580c'; icon = '⚠️'; }
+                            if (interval > 45) { color = '#dc2626'; icon = '🔴'; }
+                            else if (interval < 25) { color = '#dc2626'; icon = '🔴'; }
+                            else if (interval < 30) { color = '#ea580c'; icon = '⚠️'; }
                             intervalHtml = `<span style="color:${color};font-weight:700;font-size:9px;">${interval}天${icon}</span>`;
                         }
                         const hasConflicts = a.conflicts && a.conflicts.length > 0;
                         const isOverflow = a.is_overflow;
 
-                        // 行样式
+                        // 行样式：硬冲突红色，软警告橙色，无冲突正常
+                        const hardConflicts = (a.conflicts || []).filter(c => c.includes('撞课') || c.includes('请假') || c.includes('教室已满'));
+                        const softWarnings = (a.conflicts || []).filter(c => c.includes('连续带班') || c.includes('间隔'));
                         let rowClass = '';
                         if (isOverflow) rowClass = 'row-conflict';
-                        else if (hasConflicts) rowClass = 'row-conflict';
+                        else if (hardConflicts.length > 0) rowClass = 'row-conflict';
+                        else if (softWarnings.length > 0) rowClass = 'row-warning';
                         else if (overrideDate) rowClass = 'row-confirmed';
 
                         // 合班处理
@@ -7136,10 +7605,11 @@
                         const ddSun = new Date(dd); ddSun.setDate(dd.getDate() + 1);
                         const dateDisplay = `${dd.getMonth() + 1}/${dd.getDate()}`;
 
-                        // 状态列
+                        // 状态列：区分硬冲突(红色)和软约束警告(橙色)
                         let statusHtml = '';
                         if (isOverflow) statusHtml = '<span style="font-size:9px;color:#ea580c;font-weight:700;">⚡溢出</span>';
-                        else if (hasConflicts) statusHtml = `<span style="font-size:9px;color:#dc2626;" title="${a.conflicts.join('；')}">⚠️冲突</span>`;
+                        else if (hardConflicts.length > 0) statusHtml = `<span style="font-size:9px;color:#dc2626;" title="${hardConflicts.join('；')}">🔴冲突</span>`;
+                        if (softWarnings.length > 0) statusHtml += ` <span style="font-size:9px;color:#ea580c;" title="${softWarnings.join('；')}">⚠️提醒</span>`;
                         if (a.combo_switched) statusHtml += ' <span style="font-size:9px;color:#0891b2;" title="已自动换讲师">🔄</span>';
 
                         // 合班建议
@@ -7155,7 +7625,7 @@
                         const previewCityBadge = _previewLocName && _previewLocName !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${_previewLocName}</span>` : '';
 
                         // 数据行（只读摘要）
-                        let html_row = `<tr class="${rowClass}" style="cursor:pointer;" onclick="togglePreviewEdit(${a.class_id})" title="点击展开编辑">
+                        let html_row = `<tr id="preview-row-${a.class_id}-${a.topic_id}" class="${rowClass}" style="cursor:pointer;" onclick="togglePreviewEdit(${a.class_id})" title="点击展开编辑">
                             <td style="font-weight:700;color:#1e293b;">${a.class_name}${previewCityBadge}${mergeHtml}</td>
                             <td title="${a.display_topic_name || a.topic_name || ''}">${a.display_topic_name || a.topic_name || '—'}</td>
                             <td><span style="font-weight:600;color:#334155;">${day1Display}</span><br><span style="font-size:10px;color:#94a3b8;">${day1Course}</span></td>
@@ -7169,14 +7639,6 @@
 
                         // 编辑行（点击后展开）
                         const combos = a.available_combos || [];
-                        const sat_combo_options = combos.map(c => {
-                            const sel = (a.combo_id && c.id == a.combo_id) ? 'selected' : '';
-                            return `<option value="${c.id}" ${sel}>${c.teacher_name} / ${c.course_name}</option>`;
-                        }).join('');
-                        const sun_combo_options = combos.map(c => {
-                            const sel = (a.combo_id_2 && c.id == a.combo_id_2) ? 'selected' : '';
-                            return `<option value="${c.id}" ${sel}>${c.teacher_name} / ${c.course_name}</option>`;
-                        }).join('');
 
                         const dateOptions = previewAllSaturdays.map(s => {
                             const sd = new Date(s.date);
@@ -7203,10 +7665,11 @@
                             homeroomSelect = `<select onchange="previewChangeHomeroom(${a.class_id}, this.value)" style="${hrBorder}">${hrOptions}</select>`;
                         }
 
-                        const conflictsHtml = hasConflicts ? `<div style="font-size:9px;color:#dc2626;margin-top:2px;">${a.conflicts.join('；')}</div>` : '';
+                        let conflictsHtml = '';
+                        if (hardConflicts.length > 0) conflictsHtml += `<div style="font-size:9px;color:#dc2626;margin-top:2px;">🔴 ${hardConflicts.join('；')}</div>`;
+                        if (softWarnings.length > 0) conflictsHtml += `<div style="font-size:9px;color:#ea580c;margin-top:2px;">⚠️ ${softWarnings.join('；')}</div>`;
                         const overflowHtml = isOverflow ? '<span style="font-size:9px;font-weight:700;color:#ea580c;background:#fff7ed;padding:0 4px;border-radius:3px;">⚡ 溢出到下月</span>' : '';
 
-                        // 地点选择
                         let locationSelect = `<span style="font-size:10px;color:#7c3aed;">${_previewLocName || a.city_name || '未设置'}</span>`;
                         if (allCities.length > 0) {
                             const curLocId = a.location_id || a.default_city_id;
@@ -7216,14 +7679,27 @@
                             }).join('');
                             locationSelect = `<select onchange="previewChangeLocation(${a.class_id}, this.value)">${locOptions}</select>`;
                         }
+                        // 构建二级关联（和月度编辑一致）
+                        if (a.combo_id && !combos.find(c => c.id == a.combo_id)) {
+                            // 优先回推缺失的 combo 配置（虽然 AI 预览中比较少见）
+                            combos.push({ id: a.combo_id, teacher_name: a.combo1_teacher_name, course_name: a.combo1_course_name });
+                        }
+                        if (a.combo_id_2 && !combos.find(c => c.id == a.combo_id_2)) {
+                            combos.push({ id: a.combo_id_2, teacher_name: a.combo2_teacher_name, course_name: a.combo2_course_name });
+                        }
+                        if (!window._previewComboCascadeData) window._previewComboCascadeData = {};
+                        window._previewComboCascadeData[a.class_id] = combos;
+
+                        const pvDay1Html = `<div id="pv-casc-d1-${a.class_id}" class="inline-flex min-w-[140px]"></div>`;
+                        const pvDay2Html = `<div id="pv-casc-d2-${a.class_id}" class="inline-flex min-w-[140px]"></div>`;
 
                         html_row += `<tr class="preview-edit-row" id="preview-edit-${a.class_id}">
                             <td colspan="9" style="white-space:normal;">
                                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">第一天:</label>
-                                    <select onchange="previewAdjustCombo(${a.class_id}, 'combo1', this.value)">${sat_combo_options || '<option>无可用组合</option>'}</select>
+                                    ${pvDay1Html}
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">第二天:</label>
-                                    <select onchange="previewAdjustCombo(${a.class_id}, 'combo2', this.value)">${sun_combo_options || '<option>无可用组合</option>'}</select>
+                                    ${pvDay2Html}
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">班主任:</label>
                                     ${homeroomSelect}
                                     <label style="font-size:9px;color:#64748b;font-weight:700;">地点:</label>
@@ -7273,7 +7749,29 @@
                     </div>`).join('');
                 }
 
-                cardsContainer.innerHTML = cardsHtml;
+                // 把排课表包裹在一个可折叠容器中，配合上面的 Diff 区
+                const fullScheduleHtml = `
+                <details class="bg-white border border-slate-200 rounded-xl shadow-sm group" open>
+                    <summary class="px-4 py-3 font-bold text-sm text-slate-700 cursor-pointer hover:bg-slate-50 flex items-center justify-between list-none" style="outline:none;">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                            排课结果一览表
+                        </div>
+                        <svg class="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <div class="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl space-y-4">
+                        ${cardsHtml}
+                    </div>
+                </details>`;
+
+                cardsContainer.innerHTML = diffHtml + fullScheduleHtml;
+                
+                // 渲染级联菜单
+                scheduled.forEach(a => {
+                    const combos = window._previewComboCascadeData[a.class_id] || [];
+                    renderCascadingComboSelect(`pv-casc-d1-${a.class_id}`, combos, a.combo_id, `ie-c-pv-combo1-${a.class_id}`, (id) => { previewAdjustCombo(a.class_id, 'combo1', id); });
+                    renderCascadingComboSelect(`pv-casc-d2-${a.class_id}`, combos, a.combo_id_2, `ie-c-pv-combo2-${a.class_id}`, (id) => { previewAdjustCombo(a.class_id, 'combo2', id); });
+                });
             }
 
             // 跳过的班级
@@ -7286,6 +7784,60 @@
                 </div>`;
             } else {
                 skippedEl.classList.add('hidden');
+            }
+
+            // 顺延到下月的班级
+            const deferred = assignments.filter(a => a.is_deferred);
+            const deferredEl = document.getElementById('preview-deferred-inline');
+            if (deferred.length > 0) {
+                deferredEl.classList.remove('hidden');
+                const deferredRows = deferred.map(a => {
+                    const dDate = a.assigned_date ? new Date(a.assigned_date) : null;
+                    const dDateStr = dDate ? `${dDate.getMonth()+1}/${dDate.getDate()}` : '待定';
+                    const day1 = a.combo1_teacher_name || '待定';
+                    const day1C = a.combo1_course_name || '';
+                    const day2 = a.combo2_teacher_name || a.combo1_teacher_name || '待定';
+                    const day2C = a.combo2_course_name || a.combo1_course_name || '';
+                    const hr = a.homeroom_name || '未分配';
+                    const loc = a.location_name || a.city_name || '';
+                    const interval = a.interval_days;
+                    let intervalStr = '<span style="color:#94a3b8;font-size:9px;">—</span>';
+                    if (interval != null) {
+                        intervalStr = `<span style="color:#ea580c;font-weight:700;font-size:9px;">${interval}天⚠️</span>`;
+                    }
+                    return `<tr style="background:#eff6ff;">
+                        <td style="font-weight:700;color:#1e40af;">${a.class_name}</td>
+                        <td>${a.display_topic_name || a.topic_name || '—'}</td>
+                        <td><span style="color:#334155;">${day1}</span><br><span style="font-size:10px;color:#94a3b8;">${day1C}</span></td>
+                        <td><span style="color:#334155;">${day2}</span><br><span style="font-size:10px;color:#94a3b8;">${day2C}</span></td>
+                        <td>${hr}</td>
+                        <td><span style="font-size:10px;color:#7c3aed;">${loc}</span></td>
+                        <td style="font-size:10px;color:#1e40af;font-weight:700;">${dDateStr}</td>
+                        <td>${intervalStr}</td>
+                        <td><span style="font-size:9px;color:#2563eb;" title="${a.deferred_reason || ''}">📅顺延</span></td>
+                    </tr>`;
+                }).join('');
+
+                deferredEl.innerHTML = `<div class="bg-blue-50 rounded-lg border border-blue-200 overflow-hidden mt-3">
+                    <div class="px-3 py-2 bg-gradient-to-r from-blue-100 to-blue-50 border-b border-blue-200 flex items-center gap-2">
+                        <span class="bg-blue-200 text-blue-800 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">${deferred.length}</span>
+                        <span class="text-xs font-bold text-blue-700">📅 以下班级因冲突无法在本月排课，已顺延至下月</span>
+                    </div>
+                    <div class="overflow-x-auto"><table class="compact-table"><thead><tr>
+                        <th style="width:14%">班级</th>
+                        <th style="width:12%">课题</th>
+                        <th style="width:13%">六讲师</th>
+                        <th style="width:13%">日讲师</th>
+                        <th style="width:9%">班主任</th>
+                        <th style="width:7%">地点</th>
+                        <th style="width:10%">顺延日期</th>
+                        <th style="width:8%">间隔</th>
+                        <th style="width:14%">状态</th>
+                    </tr></thead><tbody>${deferredRows}</tbody></table></div>
+                    <div class="px-3 py-1.5 bg-blue-50 border-t border-blue-100 text-[10px] text-blue-400">💡 下次排课时系统将自动为这些班级优化安排，间隔可能偏长属正常情况</div>
+                </div>`;
+            } else {
+                deferredEl.classList.add('hidden');
             }
         }
 
@@ -7747,344 +8299,6 @@
     </script>
 
     
-    <!-- 全局 Combo Picker 三维级联组件 Modal -->
-    <div id="combo-picker-modal" class="modal-overlay hidden" style="z-index: 9999;" onclick="if(event.target==this) ComboPicker.close()">
-        <div class="modal-content glass-card w-[850px] flex flex-col shadow-2xl overflow-hidden" style="max-height: 85vh;">
-            <div class="px-5 py-4 border-b cp-header-gradient text-white flex justify-between items-center shrink-0">
-                <div>
-                    <h3 class="font-bold text-lg" id="combo-picker-title">选择周末课程</h3>
-                    <p class="text-xs text-indigo-200 mt-1 opacity-90">流畅体验三维级联：课题 ➔ 讲师 ➔ 课程</p>
-                </div>
-                <button onclick="ComboPicker.close()" class="p-2 rounded-full hover:bg-indigo-700 transition">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            
-            <div class="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-                <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
-                <input type="text" id="cp-search" class="bg-transparent border-none focus:ring-0 text-sm flex-1" placeholder="搜索课题、讲师或课程名称..." oninput="ComboPicker.onSearch(event)">
-            </div>
-            
-            <div class="flex-1 flex overflow-hidden max-h-[500px] bg-slate-50">
-                <!-- 第一列：课题 -->
-                <div class="w-1/3 border-r border-slate-200 bg-slate-50 flex flex-col">
-                    <div class="px-4 py-3 border-b border-slate-200 text-xs font-bold text-slate-500 bg-slate-100/80 backdrop-blur shadow-sm z-10 flex justify-between items-center">
-                        <span>1. 选择课题</span>
-                        <span id="cp-topic-count" class="text-[10px] font-normal text-slate-400"></span>
-                    </div>
-                    <div id="cp-topics" class="p-3 combo-col flex-1 space-y-1"></div>
-                </div>
-                
-                <!-- 第二列：讲师 -->
-                <div class="w-1/3 border-r border-slate-200 bg-white flex flex-col relative">
-                    <div class="px-4 py-3 border-b border-slate-200 text-xs font-bold text-indigo-500 bg-white shadow-sm z-10 flex justify-between items-center">
-                        <span>2. 选择讲师</span>
-                        <span id="cp-teacher-count" class="text-[10px] font-normal text-indigo-300"></span>
-                    </div>
-                    <div id="cp-teachers" class="p-3 combo-col flex-1 space-y-1">
-                        <div class="text-xs text-slate-400 text-center mt-12 px-6">👈 请先在左侧选择课程所属课题</div>
-                    </div>
-                </div>
-                
-                <!-- 第三列：课程 -->
-                <div class="w-1/3 bg-slate-50 flex flex-col relative">
-                    <div class="px-4 py-3 border-b border-slate-200 text-xs font-bold text-purple-600 bg-slate-100/80 shadow-sm z-10 flex justify-between items-center">
-                        <span>3. 选择具体课程</span>
-                        <span id="cp-course-count" class="text-[10px] font-normal text-purple-300"></span>
-                    </div>
-                    <div id="cp-courses" class="p-3 combo-col flex-1 space-y-2">
-                        <div class="text-xs text-slate-400 text-center mt-12 px-6">👈 请先在左侧选取讲师</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="px-5 py-4 border-t border-slate-200 bg-white flex justify-between items-center shrink-0">
-                <div class="text-sm flex flex-col">
-                    <span class="text-xs text-slate-400 mb-0.5">当前光标停留 / 选用：</span>
-                    <span id="cp-preview" class="font-bold text-slate-600 truncate max-w-[400px]">未选择</span>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="ComboPicker.clearSelection()" class="px-4 py-2 rounded-xl border border-red-200 text-red-500 bg-red-50 hover:bg-red-100 text-sm font-bold transition">留空 (清除)</button>
-                    <button onclick="ComboPicker.close()" class="px-5 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-500 hover:bg-slate-50 transition">取消</button>
-                    <button id="cp-confirm-btn" onclick="ComboPicker.confirm()" class="px-6 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold opacity-50 cursor-not-allowed transition" disabled>完成选用</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        // ==================== 全局三维级联选择器核心逻辑 ====================
-        window.ComboPicker = {
-            callback: null,
-            allCombos: [],
-            topics: [],
-            selTopic: null,
-            selTeacher: null,
-            selCombo: null,
-            isLoading: false,
-            searchQuery: '',
-            currentProjectId: null,
-
-            async loadData() {
-                if (this.allCombos.length > 0) return;
-                try {
-                    const resp = await fetch(`${API_BASE}/combos`);
-                    this.allCombos = await resp.json();
-                } catch(e) { console.error('Failed to load combos'); }
-            },
-
-            async open(currentComboId, callback, title = '选择课程组合', projectId = null) {
-                this.callback = callback;
-                this.currentProjectId = projectId;
-                this.searchQuery = '';
-                document.getElementById('combo-picker-title').textContent = title;
-                const searchInput = document.getElementById('cp-search');
-                if (searchInput) searchInput.value = '';
-                
-                const modal = document.getElementById('combo-picker-modal');
-                modal.classList.remove('hidden');
-                setTimeout(() => modal.classList.add('active'), 10);
-                document.body.style.overflow = 'hidden';
-                
-                if (this.allCombos.length === 0) {
-                    document.getElementById('cp-topics').innerHTML = '<div class="text-center p-4"><span class="loading"></span> 加载中...</div>';
-                    await this.loadData();
-                }
-
-                // 提取当前项目的课题
-                const projectFilteredCombos = this.currentProjectId
-                    ? this.allCombos.filter(c => c.project_id == this.currentProjectId)
-                    : this.allCombos;
-                const topicSet = new Set();
-                this.topics = [];
-                projectFilteredCombos.forEach(c => {
-                    const t = c.topic_name || '未分类';
-                    if (!topicSet.has(t)) {
-                        topicSet.add(t);
-                        this.topics.push(t);
-                    }
-                });
-
-                // 重置流转状态
-                this.selTopic = null;
-                this.selTeacher = null;
-                this.selCombo = null;
-
-                // 回显预填充
-                if (currentComboId) {
-                    const existing = this.allCombos.find(c => c.id == currentComboId);
-                    if (existing) {
-                        this.selTopic = existing.topic_name || '未分类';
-                        this.selTeacher = existing.teacher_name;
-                        this.selCombo = existing;
-                    }
-                }
-
-                this.renderTopics();
-                this.renderTeachers();
-                this.renderCourses();
-                this.updatePreview();
-                if (window.lucide) lucide.createIcons();
-            },
-
-            close() {
-                const modal = document.getElementById('combo-picker-modal');
-                modal.classList.remove('active');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    document.body.style.overflow = '';
-                }, 200);
-            },
-
-            // ============ 搜索 & 过滤 ============
-            getFilteredPool() {
-                let pool = this.currentProjectId
-                    ? this.allCombos.filter(c => c.project_id == this.currentProjectId)
-                    : this.allCombos;
-                const q = this.searchQuery.toLowerCase();
-                if (!q) return pool;
-                return pool.filter(c => {
-                    const tName = c.topic_name || '未分类';
-                    return tName.toLowerCase().includes(q) ||
-                           (c.teacher_name || '').toLowerCase().includes(q) ||
-                           (c.course_name || '').toLowerCase().includes(q);
-                });
-            },
-
-            get filteredCombos() {
-                return this.getFilteredPool();
-            },
-
-            onSearch(e) {
-                this.searchQuery = (e.target.value || '').trim();
-                const fc = this.filteredCombos;
-
-                const topicSet = new Set();
-                this.topics = [];
-                fc.forEach(c => {
-                    const t = c.topic_name || '未分类';
-                    if (!topicSet.has(t)) { topicSet.add(t); this.topics.push(t); }
-                });
-
-                if (this.selTopic && !this.topics.includes(this.selTopic)) {
-                    this.selTopic = null; this.selTeacher = null; this.selCombo = null;
-                }
-
-                // 反向搜索：搜老师名/课程名时自动选中第一个匹配课题
-                if (this.searchQuery && !this.selTopic && this.topics.length > 0) {
-                    this.selTopic = this.topics[0];
-                    this.selTeacher = null;
-                    this.selCombo = null;
-                }
-
-                this.renderTopics();
-                this.renderTeachers();
-                this.renderCourses();
-                this.updatePreview();
-            },
-
-
-            renderTopics() {
-                const el = document.getElementById('cp-topics');
-                document.getElementById('cp-topic-count').textContent = `共 ${this.topics.length} 项`;
-                el.innerHTML = this.topics.map(t => {
-                    const isActive = t === this.selTopic;
-                    return `<div class="combo-item flex justify-between items-center ${isActive ? 'active shadow-sm ring-1 ring-indigo-200' : ''}" onclick="ComboPicker.onSelectTopic('${t.replace(/'/g, "\\'")}')">
-                        <span class="truncate pr-2">${t}</span>
-                        ${isActive ? '<i data-lucide="chevron-right" class="w-4 h-4 shrink-0"></i>' : ''}
-                    </div>`;
-                }).join('');
-                if (window.lucide) lucide.createIcons();
-                // 聚焦滚动
-                const activeEl = el.querySelector('.active');
-                if(activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            },
-
-            onSelectTopic(t) {
-                if (this.selTopic === t) return;
-                this.selTopic = t;
-                this.selTeacher = null;
-                this.selCombo = null;
-                this.renderTopics();
-                this.renderTeachers();
-                this.renderCourses();
-                this.updatePreview();
-            },
-
-            renderTeachers() {
-                const el = document.getElementById('cp-teachers');
-                const q = this.searchQuery.toLowerCase();
-                if (!this.selTopic) {
-                    document.getElementById('cp-teacher-count').textContent = '';
-                    el.innerHTML = '<div class="text-xs text-slate-400 text-center mt-12 px-6">👈 请先在左侧选择课程所属课题</div>';
-                    return;
-                }
-                const combosInTopic = this.filteredCombos.filter(c => (c.topic_name || '未分类') === this.selTopic);
-                
-                const teacherMap = {};
-                combosInTopic.forEach(c => {
-                    if (!teacherMap[c.teacher_name]) teacherMap[c.teacher_name] = 0;
-                    teacherMap[c.teacher_name]++;
-                });
-                
-                const teachers = Object.keys(teacherMap);
-                document.getElementById('cp-teacher-count').textContent = `共 ${teachers.length} 位`;
-
-                if (teachers.length === 0) {
-                    el.innerHTML = '<div class="text-xs text-slate-400 text-center mt-12">该课题暂无配置老师</div>';
-                    return;
-                }
-
-                el.innerHTML = teachers.map(tchr => {
-                    const isActive = tchr === this.selTeacher;
-                    return `<div class="combo-item flex justify-between items-center ${isActive ? 'active shadow-sm ring-1 ring-indigo-200' : ''}" onclick="ComboPicker.onSelectTeacher('${tchr.replace(/'/g, "\\'")}')">
-                        <div class="flex items-center gap-2 truncate pr-2">
-                            <div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] text-indigo-700 font-bold shrink-0">${tchr.charAt(0)}</div>
-                            <span class="truncate">${tchr}</span>
-                        </div>
-                        <div class="flex items-center gap-1 shrink-0">
-                            <span class="text-[10px] ${isActive ? 'text-indigo-400' : 'text-slate-400'} px-1.5 py-0.5 rounded-md ${isActive?'bg-indigo-100':'bg-slate-100'}">${teacherMap[tchr]}门课</span>
-                            ${isActive ? '<i data-lucide="chevron-right" class="w-4 h-4"></i>' : ''}
-                        </div>
-                    </div>`;
-                }).join('');
-                if (window.lucide) lucide.createIcons();
-                const activeEl = el.querySelector('.active');
-                if(activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            },
-
-            onSelectTeacher(tchr) {
-                if (this.selTeacher === tchr) return;
-                this.selTeacher = tchr;
-                this.selCombo = null;
-                this.renderTeachers();
-                this.renderCourses();
-                this.updatePreview();
-            },
-
-            renderCourses() {
-                const el = document.getElementById('cp-courses');
-                if (!this.selTeacher) {
-                    document.getElementById('cp-course-count').textContent = '';
-                    el.innerHTML = '<div class="text-xs text-slate-400 text-center mt-12 px-6">👈 请先在左侧选取讲师</div>';
-                    return;
-                }
-                const combos = this.filteredCombos.filter(c => (c.topic_name || '未分类') === this.selTopic && c.teacher_name === this.selTeacher);
-                document.getElementById('cp-course-count').textContent = `共 ${combos.length} 门`;
-                
-                el.innerHTML = combos.map(c => {
-                    const isActive = this.selCombo && this.selCombo.id === c.id;
-                    return `<div class="combo-item border bg-white ${isActive ? 'active !border-purple-400 shadow-md ring-2 ring-purple-100' : 'border-slate-200 hover:border-slate-300 shadow-sm'} mb-2 p-3 transition" 
-                                onclick="ComboPicker.onSelectCourse(${c.id})" ondblclick="ComboPicker.onSelectCourse(${c.id}); ComboPicker.confirm()">
-                        <div class="font-bold mb-1 text-sm ${isActive ? 'text-purple-700' : 'text-slate-700'}">${c.course_name}</div>
-                        <div class="text-[10px] text-slate-400 flex items-center gap-1">
-                            <span class="bg-slate-100 px-1.5 py-0.5 rounded">${this.selTopic}</span>
-                            <span>·</span>
-                            <span>${this.selTeacher}</span>
-                        </div>
-                    </div>`;
-                }).join('');
-            },
-
-            onSelectCourse(comboId) {
-                this.selCombo = this.allCombos.find(c => c.id == comboId);
-                this.renderCourses();
-                this.updatePreview();
-            },
-
-            updatePreview() {
-                const preview = document.getElementById('cp-preview');
-                const btn = document.getElementById('cp-confirm-btn');
-                if (this.selCombo) {
-                    preview.innerHTML = `<span class="text-slate-400">${this.selTopic}</span> <span class="text-slate-300 mx-1">➔</span> <span class="text-indigo-400">${this.selTeacher}</span> <span class="text-slate-300 mx-1">➔</span> <span class="text-purple-600 font-extrabold">${this.selCombo.course_name}</span>`;
-                    btn.disabled = false;
-                    btn.className = 'px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 hover:shadow-lg hover:-translate-y-0.5 text-white text-sm font-bold shadow-md transition-all';
-                    btn.innerHTML = '✨ 选用此课程';
-                } else {
-                    preview.textContent = '未选中任何课程';
-                    preview.className = 'text-slate-400 font-normal';
-                    btn.disabled = true;
-                    btn.className = 'px-6 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold opacity-50 cursor-not-allowed transition-all';
-                    btn.textContent = '完成选用';
-                }
-            },
-
-            confirm() {
-                if (this.selCombo && this.callback) {
-                    this.callback(this.selCombo.id, `${this.selCombo.teacher_name} - ${this.selCombo.course_name}`);
-                    this.close();
-                }
-            },
-            
-            clearSelection() {
-                if (this.callback) {
-                    this.callback('', '-- 留空 / 未安排 --');
-                    this.close();
-                }
-            }
-        };
-    </script>
-
 </body>
 
 </html>

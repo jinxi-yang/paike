@@ -26,13 +26,14 @@ class Config:
     MAX_WEEKS_INTERVAL = 5  # 最大排课间隔（周）
 
     # === 智能排课算法参数 ===
-    TARGET_INTERVAL_DAYS = 35    # 理想上课间隔（天）
-    MIN_INTERVAL_DAYS = 21       # 最短允许间隔（3周），低于此值硬拒绝
-    MAX_INTERVAL_DAYS = 42       # 超过此值发出警告（6周）
+    TARGET_INTERVAL_DAYS = 37    # 理想上课间隔（天）— 30~45天中位
+    MIN_INTERVAL_DAYS = 25       # 最短允许间隔（硬拒绝），低于此值直接排除
+    MAX_INTERVAL_DAYS = 45       # 超过此值发出警告
     MAX_CLASSES_PER_SATURDAY = 7 # 每周六最大排课数（= 教室数量）
 
     # 评分权重（总和 = 1.0）
-    SCORE_INTERVAL_WEIGHT = 0.60   # 间隔合理性
-    SCORE_CONFLICT_WEIGHT = 0.25   # 无冲突
+    # 核心原则：排课是为了解决冲突，不是追求高分；冲突比间隔更重要
+    SCORE_INTERVAL_WEIGHT = 0.30   # 间隔合理性
+    SCORE_CONFLICT_WEIGHT = 0.50   # 无冲突（冲突解决是核心目标，权重最高）
     SCORE_BALANCE_WEIGHT = 0.10    # 日期均衡分布
-    SCORE_IN_MONTH_WEIGHT = 0.05   # 目标月份匹配
+    SCORE_IN_MONTH_WEIGHT = 0.10   # 目标月份匹配

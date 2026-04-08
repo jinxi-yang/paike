@@ -69,6 +69,7 @@ class Topic(db.Model):
     sequence = db.Column(db.Integer, nullable=False, comment='课题顺序(1-8)')
     name = db.Column(db.String(200), nullable=False, comment='课题名称')
     is_fixed = db.Column(db.Boolean, default=False, comment='是否固定(首尾)')
+    is_other = db.Column(db.Boolean, default=False, comment='是否为“其他”类型课题（可重复排课）')
     description = db.Column(db.Text, comment='课题描述')
     
     # 关系
@@ -82,6 +83,7 @@ class Topic(db.Model):
             'sequence': self.sequence,
             'name': self.name,
             'is_fixed': self.is_fixed,
+            'is_other': self.is_other or False,
             'description': self.description
         }
         if include_combos:
@@ -245,9 +247,20 @@ class ClassSchedule(db.Model):
     def to_dict(self):
         topic_name = self.topic.name if self.topic else None
         topic_seq = self.topic.sequence if self.topic else None
-        total = self.class_.project.topics.count() if self.class_ and self.class_.project else 0
 
-        # 拼接仪式前缀：根据开关字段动态拼接
+        # 基准总数：项目大纲中去掉非主线课题（is_other=True）的核心主修课数量
+        base_core_count = self.class_.project.topics.filter(Topic.is_other != True).count() if self.class_ and self.class_.project else 0
+        
+        # 动态增加数：当前班级实际已经安排了的非主线主修课数量（比如安排了一次答辩，总课时自动+1）
+        other_scheduled_count = 0
+        if self.class_id:
+            other_scheduled_count = ClassSchedule.query.join(Topic).filter(
+                ClassSchedule.class_id == self.class_id,
+                db.or_(ClassSchedule.status != 'cancelled', ClassSchedule.status.is_(None)),
+                Topic.is_other == True
+            ).count()
+            
+        total = base_core_count + other_scheduled_count
         display_name = topic_name
         if topic_name:
             prefixes = []
@@ -271,6 +284,7 @@ class ClassSchedule(db.Model):
             'location_name': (self.location.name if self.location else (self.class_.city_ref.name if self.class_ and self.class_.city_ref else '北京')),
             'topic_id': self.topic_id,
             'topic_name': topic_name,
+            'topic_is_other': (self.topic.is_other if self.topic else False),
             'display_topic_name': display_name,
             'topic_sequence': topic_seq,
             'combo_id': self.combo_id,

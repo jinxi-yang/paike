@@ -1,0 +1,200 @@
+        function renderMonthView() {
+            const container = document.getElementById('schedule-container');
+            if (!cachedMonthData) {
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
+                return;
+            }
+            const weeks = cachedMonthData.weeks || [];
+            if (weeks.length === 0) {
+                container.innerHTML = '<div class="text-center text-slate-400 p-8">本月暂无排课</div>';
+                return;
+            }
+
+            let html = `<div class="space-y-4 pb-4">`;
+
+            weeks.forEach((w, idx) => {
+                const weekStart = new Date(w.week_start);
+                const weekEnd = new Date(w.week_end);
+                const sat = new Date(weekStart);
+                sat.setDate(sat.getDate() + (6 - sat.getDay()));
+                const sun = new Date(sat);
+                sun.setDate(sun.getDate() + 1);
+                const dateRangeStr = `${weekStart.getMonth() + 1}/${weekStart.getDate()} - ${weekEnd.getMonth() + 1}/${weekEnd.getDate()}`;
+                const satLabel = `六 ${sat.getMonth() + 1}/${sat.getDate()}`;
+                const sunLabel = `日 ${sun.getMonth() + 1}/${sun.getDate()}`;
+
+                html += `<div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                    <div class="px-3 py-1.5 bg-slate-50 border-b flex items-center gap-3">
+                        <span class="bg-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-600 font-bold">第${idx + 1}周</span>
+                        <span class="text-xs text-slate-500">${dateRangeStr}</span>
+                        <span class="text-[10px] text-slate-400 ml-auto">${(w.schedules || []).filter(s => !s.merged_with).length} 个班</span>
+                    </div>`;
+
+                if (!w.schedules || w.schedules.length === 0) {
+                    html += `<div class="p-3 text-xs text-slate-400 italic">本周无课</div>`;
+                } else {
+                    html += `<div class="overflow-x-auto"><table class="compact-table"><thead><tr>
+                        <th style="width:14%">班级</th>
+                        <th style="width:12%">课题</th>
+                        <th style="width:16%">${satLabel}</th>
+                        <th style="width:16%">${sunLabel}</th>
+                        <th style="width:10%">班主任</th>
+                        <th style="width:8%">地点</th>
+                        <th style="width:10%">进度</th>
+                        <th style="width:14%">操作</th>
+                    </tr></thead><tbody>`;
+
+                    w.schedules.forEach(sch => {
+                        const progress = (sch.week_number !== null && sch.week_number !== undefined) ? `${sch.week_number}/${sch.total_topics || '-'}` : '-/-';
+                        const isSelected = selectedMergeIds.has(sch.id);
+                        const isCompleted = sch.status === 'completed';
+                        const isConfirmed = sch.status === 'confirmed';
+                        const isPast = new Date(sch.scheduled_date) < new Date(new Date().setHours(0, 0, 0, 0));
+                        const isMerged = sch.merged_with || (sch.notes && (sch.notes.includes('合班主记录') || sch.notes.includes('合班至') || sch.notes.includes('合班:')));
+
+                        // ghost行：合班次记录
+                        if (sch.merged_with) {
+                            const mainSch = w.schedules.find(s => s.id === sch.merged_with);
+                            const mainName = mainSch ? mainSch.class_name : '未知班级';
+                            html += `<tr class="row-ghost">
+                                <td title="${sch.class_name || ''}">${sch.class_name || '未命名'} <span class="merge-badge">🔗</span></td>
+                                <td colspan="5" style="color:#a78bfa;font-size:10px;">→ 已合班至 ${mainName}</td>
+                                <td></td>
+                            </tr>`;
+                            return;
+                        }
+
+                        // 前端实时冲突检测
+                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
+                        const day1Course = sch.combo ? sch.combo.course_name : '待定';
+                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
+                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
+                        const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
+                        const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
+                        const d2Conflict = day2Teacher !== '待定' && others.find(x => {
+                            const xt2 = x.combo_2 ? x.combo_2.teacher_name : null;
+                            return xt2 === day2Teacher;
+                        });
+                        const hrName = sch.homeroom_name || '未分配';
+                        const hrSameDate = others.filter(x => x.homeroom_name === hrName);
+                        const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
+                        const hasDbConflict = sch.conflict_type != null;
+
+                        // S5: 班主任连续带班间隔 < 2周 检测（跨周比对）
+                        let hrGapWarning = false;
+                        let hrGapDetail = '';
+                        if (hrName !== '未分配' && !hrConflict && cachedMonthData && cachedMonthData.weeks) {
+                            const thisWeekIdx = cachedMonthData.weeks.indexOf(w);
+                            for (const delta of [-1, 1]) {
+                                const adjWeek = cachedMonthData.weeks[thisWeekIdx + delta];
+                                if (adjWeek && adjWeek.schedules) {
+                                    const adjHrMatch = adjWeek.schedules.find(x => x.homeroom_name === hrName && x.id !== sch.id && !x.merged_with);
+                                    if (adjHrMatch) {
+                                        hrGapWarning = true;
+                                        hrGapDetail = `班主任连续带班(与${adjHrMatch.class_name}间隔<2周)`;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 硬冲突 vs 软警告
+                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                        const hasSoftWarning = hrGapWarning;
+
+                        // 行样式：硬冲突红色，软警告橙色
+                        let rowClass = '';
+                        if (isSelected || (isMergeMode && selectedMergeIds.has(sch.id))) rowClass = 'row-selected';
+                        else if (hasHardConflict) rowClass = 'row-conflict';
+                        else if (hasSoftWarning) rowClass = 'row-warning';
+                        else if (isMerged) rowClass = 'row-merged';
+                        else if (isCompleted) rowClass = 'row-completed';
+                        else if (isConfirmed) rowClass = 'row-confirmed';
+
+                        // 合班标签
+                        let mergedBadge = '';
+                        if (isMerged) {
+                            const mergedSchList = w.schedules.filter(s => s.merged_with === sch.id);
+                            if (mergedSchList.length > 0) {
+                                if (!window._mergePopupData) window._mergePopupData = {};
+                                window._mergePopupData[sch.id] = {
+                                    items: mergedSchList.map(ms => ({
+                                        id: ms.id, name: ms.class_name || '?',
+                                        t1: ms.combo ? ms.combo.teacher_name : '待定', c1: ms.combo ? ms.combo.course_name : '待定',
+                                        t2: ms.combo_2 ? ms.combo_2.teacher_name : (ms.combo ? ms.combo.teacher_name : '待定'),
+                                        c2: ms.combo_2 ? ms.combo_2.course_name : (ms.combo ? ms.combo.course_name : '待定'),
+                                        hr: ms.homeroom_name || '未分配'
+                                    })), mainId: sch.id
+                                };
+                                mergedBadge = ` <span class="merge-badge" onclick="event.stopPropagation();showMergedInfo(this,${sch.id})">🔗</span>`;
+                            } else if (sch.notes) {
+                                if (!window._mergePopupData) window._mergePopupData = {};
+                                const m1 = sch.notes.match(/合班主记录（含\\s*(.+?)）/);
+                                const m2 = sch.notes.match(/合班至\\s*(.+?)(?:（|$)/);
+                                const m3 = sch.notes.match(/合班[:：]\\s*与(.+?)合班/);
+                                const nameStr = m1 ? m1[1] : m2 ? m2[1] : m3 ? m3[1] : '';
+                                const mergedNames = nameStr.split(/[,，、]/).filter(Boolean);
+                                if (mergedNames.length > 0) {
+                                    window._mergePopupData[sch.id] = {
+                                        items: mergedNames.map(n => ({ id: 0, name: n.trim(), t1: '-', c1: '-', t2: '-', c2: '-', hr: '-' })),
+                                        mainId: sch.id
+                                    };
+                                }
+                                mergedBadge = ` <span class="merge-badge" onclick="event.stopPropagation();showMergedInfo(this,${sch.id})">🔗</span>`;
+                            } else {
+                                mergedBadge = ` <span class="merge-badge">🔗</span>`;
+                            }
+                        }
+
+                        // 间隔
+                        let intervalHtml = '<span style="color:#94a3b8;font-size:9px;">首次</span>';
+                        if (sch.interval_days != null) {
+                            const d = sch.interval_days;
+                            let color = '#16a34a'; let icon = '✅';
+                            if (d > 45) { color = '#dc2626'; icon = '🔴'; }
+                            else if (d < 25) { color = '#dc2626'; icon = '🔴'; }
+                            else if (d < 30) { color = '#ea580c'; icon = '⚠️'; }
+                            intervalHtml = `<span style="color:${color};font-weight:700;font-size:9px;">${d}天${icon}</span>`;
+                        }
+
+                        // 合班建议
+                        let mergeSuggestHtml = '';
+                        if (!isPast && !isMerged && !isCompleted) {
+                            // 3.9: 检查Day1/Day2是否不同课题，如是则禁止合班
+                            const d1TopicId = sch.combo ? sch.combo.topic_id : null;
+                            const d2TopicId = sch.combo_2 ? sch.combo_2.topic_id : null;
+                            const hasCrossTopicWeekend = d1TopicId && d2TopicId && d1TopicId !== d2TopicId;
+
+                            if (hasCrossTopicWeekend) {
+                                mergeSuggestHtml = '<span style="font-size:9px;color:#f59e0b;" title="周六/日属于不同课题，不可合班">⚠️跨课题</span>';
+                            } else {
+                                const sameDateScheds = w.schedules.filter(other => other.id !== sch.id && !other.merged_with && other.status !== 'completed' && other.topic_id && sch.topic_id && other.topic_id === sch.topic_id);
+                                if (sameDateScheds.length > 0) {
+                                    mergeSuggestHtml = sameDateScheds.map(other =>
+                                        `<button onclick="executeMergeDirectly(${other.id},${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff;border-radius:3px;cursor:pointer;white-space:nowrap;">🔗${other.class_name}</button>`
+                                    ).join(' ');
+                                }
+                            }
+                        }
+
+                        const conflictAssistHtml = buildConflictAssistHtml(sch, isPast, {
+                            d1Conflict, d2Conflict, hrConflict,
+                            hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
+                        });
+
+                        const _locName = sch.location_name || sch.city_name;
+                        const cityBadge = _locName && _locName !== '北京' ? `<span style="font-size:9px;color:#7c3aed;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:3px;padding:0 3px;margin-left:3px;">${_locName}</span>` : '';
+
+                        html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
+                            <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
+                            <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
+                            <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
+                            <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
+                            <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : hrGapWarning ? 'color:#ea580c;' : ''}" ${hrGapWarning ? `title="${hrGapDetail}"` : ''}>${hrName}${hrConflict ? '🔴' : hrGapWarning ? '⚠️' : ''}</td>
+                            <td><span style="font-size:10px;color:#7c3aed;">${_locName || sch.city_name || '未设置'}</span></td>
+                            <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
+                            <td style="white-space:nowrap;">${!isPast ? `<button onclick="deleteScheduleItem(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:3px;cursor:pointer;">删除</button>` : ''}${(!isPast && !isCompleted && !isMerged) ? ` <button onclick="openSwapTopicModal(${sch.id});event.stopPropagation();" style="font-size:9px;padding:0 3px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:3px;cursor:pointer;">🔄交换</button>` : ''} ${mergeSuggestHtml}</td>
+                        </tr>`;
+                        // 点击展开编辑行
+                        if (!isPast) {
+                            html += `<tr id="edit-row-${sch.id}" class="schedule-edit-row" style="display:none;">

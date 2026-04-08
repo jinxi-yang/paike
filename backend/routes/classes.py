@@ -481,11 +481,21 @@ def add_schedule(id):
     combo_id = data.get('combo_id')
     combo_id_2 = data.get('combo_id_2')
     scheduled_date_str = data.get('scheduled_date')
+    postpone_weeks = data.get('postpone_weeks', 0)  # 推迟受影响课次的周数
     
     if not topic_id or not scheduled_date_str:
         return jsonify({'error': '缺少 topic_id 或 scheduled_date'}), 400
     
     scheduled_date = date.fromisoformat(scheduled_date_str)
+    
+    # 课题唯一性校验：非"其他"课题在班级中只能排一次
+    topic = Topic.query.get(topic_id)
+    if topic and not topic.is_other:
+        existing = ClassSchedule.query.filter_by(
+            class_id=id, topic_id=topic_id
+        ).first()
+        if existing:
+            return jsonify({'error': f'课题「{topic.name}」已在本班课表中，普通课题只能排课一次。如需重复排课请使用【其他】课题。'}), 400
     
     # 地点校验
     from models import City
@@ -497,6 +507,24 @@ def add_schedule(id):
         if location_id_val in used_locations:
             loc = City.query.get(location_id_val)
             return jsonify({'error': f'该班级已去过地点「{loc.name if loc else location_id_val}」，不允许再次选择'}), 400
+    
+    # 推迟受影响的后续课次（避开节假日）
+    postponed_count = 0
+    if postpone_weeks and postpone_weeks > 0:
+        from datetime import timedelta
+        from .schedule import is_holiday
+        shift_days = postpone_weeks * 7
+        affected_schedules = ClassSchedule.query.filter(
+            ClassSchedule.class_id == id,
+            ClassSchedule.scheduled_date >= scheduled_date
+        ).order_by(ClassSchedule.scheduled_date).all()
+        for sch in affected_schedules:
+            new_date = sch.scheduled_date + timedelta(days=shift_days)
+            # 如果新日期落在节假日，继续往后找下一个可用周六
+            while is_holiday(new_date):
+                new_date += timedelta(weeks=1)
+            sch.scheduled_date = new_date
+            postponed_count += 1
     
     # 计算 week_number（当前班级最大课次+1）
     max_week = db.session.query(func.max(ClassSchedule.week_number)).filter(
@@ -523,7 +551,12 @@ def add_schedule(id):
     _resequence_topics_by_date(id)
     schedule = ClassSchedule.query.get(schedule.id)
     
-    return jsonify(schedule.to_dict()), 201
+    result = schedule.to_dict()
+    if postponed_count > 0:
+        result['postponed_count'] = postponed_count
+        result['postpone_message'] = f'已将 {postponed_count} 个后续课次推迟 {postpone_weeks} 周'
+    
+    return jsonify(result), 201
 
 
 @classes_bp.route('/<int:id>/schedule/<int:sid>', methods=['DELETE'])
