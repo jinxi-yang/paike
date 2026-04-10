@@ -1,0 +1,55 @@
+﻿python : D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_duplicate_topics.py:51: LegacyAPIWarning: The Query.get() method is cons
+idered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as 
+Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+At line:1 char:1
++ python fix_duplicate_topics.py 2>&1 | Out-File -Encoding utf8 fix_dup ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\ѧϰ\outputmsg...lche.me/e/b8d9):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  sch9 = ClassSchedule.query.get(41)
+D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_duplicate_topics.py:30: LegacyAPIWarning: The Query.get() method is considered le
+gacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.g
+et() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+  new_topic = Topic.query.get(new_topic_id)
+D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_duplicate_topics.py:21: LegacyAPIWarning: The Query.get() method is considered le
+gacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.g
+et() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+  topic = Topic.query.get(topic_id)
+D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_duplicate_topics.py:22: LegacyAPIWarning: The Query.get() method is considered le
+gacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.g
+et() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+  teacher = Teacher.query.get(teacher_id)
+D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_duplicate_topics.py:55: LegacyAPIWarning: The Query.get() method is considered le
+gacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.g
+et() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+  sch10 = ClassSchedule.query.get(195)
+Loaded 39 holiday records from: D:\学习\outputmsg\排课\paike\backend\holidays_2026.json
+============================================================
+EMBA127 (ID=5): 企业数字化变革 课次9(6/27)和课次10(8/1) → 改【其他】
+============================================================
+
+  schedule_id=41 date=2026-06-27
+  课题: [企业数字化变革与数智创新] -> [其他]
+  [NEW COMBO] combo_id=246: [其他] 熊郭健/从造物到谋事：商业模式落地实操
+  [EXISTING] combo_id=246
+
+  schedule_id=195 date=2026-08-01
+  课题: [企业数字化变革与数智创新] -> [其他]
+  [NEW COMBO] combo_id=247: [其他] 杨波/《领导力赋能组织活力》
+  [EXISTING] combo_id=54
+
+
+--- 修复后EMBA127课题分布 ---
+  2025-06-28 [领导力与团队建设] 
+  2025-08-09 [人力资源管理与组织效能提升] 
+  2025-09-27 [人工智能与商业应用] 
+  2025-10-25 [财务管理与风险管理优化] 
+  2025-12-20 [宏观经济与企业战略创新] 
+  2026-03-14 [财务管理与风险管理优化] 
+  2026-04-18 [企业数字化变革与数智创新] 
+  2026-05-30 [品牌营销与数智化营销] 
+  2026-06-27 [其他] [其他]
+  2026-08-01 [其他] [其他]
+
+  仍有重复: {'财务管理与风险管理优化': 2}

@@ -65,13 +65,17 @@
                         }
 
                         // 前端实时冲突检测
-                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                        const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
-                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
+                        const day1Teacher = sch.combo ? sch.combo.teacher_name : (sch.combo_id ? `组合#${sch.combo_id}(已失效)` : '待定(无组合)');
+                        const day1Course = sch.combo ? sch.combo.course_name : (sch.combo_id ? '组合记录不存在' : '待定');
+                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo_id_2 ? `组合#${sch.combo_id_2}(已失效)` : '待定(无组合)');
+                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo_id_2 ? '组合记录不存在' : '待定');
+                        const d1TopicMismatch = !!(sch.combo && sch.topic_id && sch.combo.topic_id && sch.combo.topic_id !== sch.topic_id);
+                        const d2TopicMismatch = !!(sch.combo_2 && sch.topic_id && sch.combo_2.topic_id && sch.combo_2.topic_id !== sch.topic_id);
+                        const d1ComboBroken = !!(sch.combo_id && !sch.combo);
+                        const d2ComboBroken = !!(sch.combo_id_2 && !sch.combo_2);
                         const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
-                        const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
-                        const d2Conflict = day2Teacher !== '待定' && others.find(x => {
+                        const d1Conflict = day1Teacher !== '待定(无组合)' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
+                        const d2Conflict = day2Teacher !== '待定(无组合)' && others.find(x => {
                             const xt2 = x.combo_2 ? x.combo_2.teacher_name : null;
                             return xt2 === day2Teacher;
                         });
@@ -99,7 +103,7 @@
                         }
 
                         // 硬冲突 vs 软警告
-                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict || d1TopicMismatch || d2TopicMismatch || d1ComboBroken || d2ComboBroken;
                         const hasSoftWarning = hrGapWarning;
 
                         // 行样式：硬冲突红色，软警告橙色
@@ -178,7 +182,7 @@
                         }
 
                         const conflictAssistHtml = buildConflictAssistHtml(sch, isPast, {
-                            d1Conflict, d2Conflict, hrConflict,
+                            d1Conflict, d2Conflict, hrConflict, d1TopicMismatch, d2TopicMismatch, d1ComboBroken, d2ComboBroken,
                             hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
                         });
 
@@ -188,8 +192,8 @@
                         html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
                             <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
                             <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
-                            <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
-                            <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
+                            <td><span style="font-weight:600;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}${d1TopicMismatch ? '⚠️' : ''}${d1ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d1ComboBroken ? ('组合ID=' + sch.combo_id + ' 已失效') : (d1TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo?.topic_name || '未知课题')) : '')}">${day1Course}${d1ComboBroken ? '（组合已失效）' : (d1TopicMismatch ? `（课题不匹配: ${(sch.combo?.topic_name || '未知课题')}）` : '')}</span></td>
+                            <td><span style="font-weight:600;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}${d2TopicMismatch ? '⚠️' : ''}${d2ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d2ComboBroken ? ('组合ID=' + sch.combo_id_2 + ' 已失效') : (d2TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo_2?.topic_name || '未知课题')) : '')}">${day2Course}${d2ComboBroken ? '（组合已失效）' : (d2TopicMismatch ? `（课题不匹配: ${(sch.combo_2?.topic_name || '未知课题')}）` : '')}</span></td>
                             <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : hrGapWarning ? 'color:#ea580c;' : ''}" ${hrGapWarning ? `title="${hrGapDetail}"` : ''}>${hrName}${hrConflict ? '🔴' : hrGapWarning ? '⚠️' : ''}</td>
                             <td><span style="font-size:10px;color:#7c3aed;">${_locName || sch.city_name || '未设置'}</span></td>
                             <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>

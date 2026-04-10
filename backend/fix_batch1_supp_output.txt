@@ -1,0 +1,51 @@
+﻿python : D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_batch1_supplement.py:34: LegacyAPIWarning: The Query.get() method is con
+sidered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as
+ Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+At line:1 char:1
++ python fix_batch1_supplement.py 2>&1 | Out-File -Encoding utf8 fix_ba ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\ѧϰ\outputmsg...lche.me/e/b8d9):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  topic_name = Topic.query.get(topic_id).name
+Loaded 39 holiday records from: D:\学习\outputmsg\排课\paike\backend\holidays_2026.json
+============================================================
+1. EMBA126 4/18 领导力: 董俊豪/待定 + 易正/待定
+============================================================
+  [NEW COMBO] combo_id=241: [领导力与团队建设] 董俊豪/待定
+  [FIX D1] schedule_id=193 combo_id: None -> 241
+  [NEW COMBO] combo_id=242: [领导力与团队建设] 易正/待定
+  [FIX D2] schedule_id=193 combo_id_2: None -> 242
+
+============================================================
+2. EMBA126 5/23 D2: 王薇华/待定
+============================================================
+  [NEW COMBO] combo_id=243: [品牌营销与数智化营销] 王薇华/待定
+  [FIX D2] schedule_id=32 combo_id_2: None -> 243
+
+============================================================
+3. 删除EMBA126 7/5多余记录
+============================================================
+  [DELETE] schedule_id=169 topic=企业数字化变革 date=2025-07-05 (多余记录)
+
+============================================================
+4. EMBA127 9/27: 刘春华 两天相同
+============================================================
+  [EXISTING] combo_id=14: 刘春华/AI时代下的新营销九段法
+  [FIX D1] schedule_id=35 combo_id: None -> 14
+  [EXISTING] combo_id=14: 刘春华/AI时代下的新营销九段法
+  [FIX D2] schedule_id=35 combo_id_2: None -> 14
+
+============================================================
+5. 开学典礼D1修复: 院长/院长课 + 事件标志
+============================================================
+  [NEW COMBO] combo_id=244: [企业数字化变革与数智创新] 院长/院长课
+  [FIX D1] schedule_id=1 combo_id: None -> 244
+  [EXISTING] combo_id=244: 院长/院长课
+  [FIX D1] schedule_id=17 combo_id: None -> 244
+  [NEW COMBO] combo_id=245: [领导力与团队建设] 院长/院长课
+  [FIX D1] schedule_id=33 combo_id: None -> 245
+
+============================================================
+补充修复全部完成!
+============================================================

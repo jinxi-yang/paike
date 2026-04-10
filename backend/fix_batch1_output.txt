@@ -1,0 +1,70 @@
+﻿python : D:\ѧϰ\outputmsg\�ſ�\paike\backend\fix_batch1.py:29: LegacyAPIWarning: The Query.get() method is considered leg
+acy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.ge
+t() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+At line:1 char:1
++ python fix_batch1.py 2>&1 | Out-File -Encoding utf8 fix_batch1_output ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\ѧϰ\outputmsg...lche.me/e/b8d9):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  topic = Topic.query.get(topic_id)
+Loaded 39 holiday records from: D:\学习\outputmsg\排课\paike\backend\holidays_2026.json
+============================================================
+EMBA122期 (ID=1)
+============================================================
+  [NEW COMBO] combo_id=227: 课题=[财务管理与风险管理优化] 讲师=张庆安 课程=国际形势与宏观经济
+  [FIX D2] schedule_id=2 combo_id_2: None → 227
+
+============================================================
+EMBA123期 (ID=2)
+============================================================
+  [NEW COMBO] combo_id=228: 课题=[人工智能与商业应用] 讲师=杨台轩 课程=3D领导力—企业与员工成长发展的战略性突破
+  [FIX D2] schedule_id=14 combo_id_2: None → 228
+  [NEW COMBO] combo_id=229: 课题=[企业数字化变革与数智创新] 讲师=陈晋蓉 课程=资本运营新策略
+  [FIX D1] schedule_id=194 combo_id: None → 229
+  [NEW COMBO] combo_id=230: 课题=[企业数字化变革与数智创新] 讲师=刘钰 课程=公司治理与股权设计
+  [FIX D2] schedule_id=194 combo_id_2: None → 230
+
+============================================================
+EMBA125期 (ID=3)
+============================================================
+  [NEW COMBO] combo_id=231: 课题=[人力资源管理与组织效能提升] 讲师=严小云 课程=卓越薪酬绩效管理体系
+  [FIX D1] schedule_id=19 combo_id: None → 231
+  [EXISTING COMBO] combo_id=231: 讲师=严小云 课程=卓越薪酬绩效管理体系
+  [FIX D2] schedule_id=19 combo_id_2: None → 231
+  [NEW COMBO] combo_id=232: 课题=[人力资源管理与组织效能提升] 讲师=刘勇 课程=AI全网矩阵营销与产业互联网进化
+  [FIX D2] schedule_id=21 combo_id_2: None → 232
+  [NEW COMBO] combo_id=233: 课题=[人工智能与商业应用] 讲师=董俊豪 课程=企业AI Deepseek战略课
+  [FIX D1] schedule_id=22 combo_id: None → 233
+  [NEW COMBO] combo_id=234: 课题=[人工智能与商业应用] 讲师=常亮 课程=公司股权架构设计与激励
+  [FIX D2] schedule_id=22 combo_id_2: None → 234
+  [NEW COMBO] combo_id=235: 课题=[宏观经济与企业战略创新] 讲师=曲融 课程=投资视角下的行业研究体系分析
+  [FIX D2] schedule_id=200 combo_id_2: None → 235
+
+============================================================
+EMBA126期 (ID=4)
+============================================================
+  [NEW COMBO] combo_id=236: 课题=[财务管理与风险管理优化] 讲师=吴子敬 课程=股权设计、股权合伙与激励
+  [FIX D1] schedule_id=27 combo_id: None → 236
+  [EXISTING COMBO] combo_id=236: 讲师=吴子敬 课程=股权设计、股权合伙与激励
+  [FIX D2] schedule_id=27 combo_id_2: None → 236
+  [EXISTING COMBO] combo_id=14: 讲师=刘春华 课程=AI时代下的新营销九段法
+  [FIX D1] schedule_id=30 combo_id: None → 14
+  [EXISTING COMBO] combo_id=14: 讲师=刘春华 课程=AI时代下的新营销九段法
+  [FIX D2] schedule_id=30 combo_id_2: None → 14
+
+============================================================
+EMBA127期 (ID=5)
+============================================================
+  [NEW COMBO] combo_id=237: 课题=[财务管理与风险管理优化] 讲师=韩铁林 课程=企业战略规划与制定
+  [FIX D2] schedule_id=38 combo_id_2: None → 237
+  [NEW COMBO] combo_id=238: 课题=[企业数字化变革与数智创新] 讲师=董俊豪 课程=AI驱动增长：企业家的战略蓝图与实战路径
+  [FIX D1] schedule_id=192 combo_id: None → 238
+  [NEW COMBO] combo_id=239: 课题=[企业数字化变革与数智创新] 讲师=尚旭 课程=易经智慧与经营决策
+  [FIX D2] schedule_id=192 combo_id_2: None → 239
+  [NEW COMBO] combo_id=240: 课题=[企业数字化变革与数智创新] 讲师=易正 课程=中国古法姓名学
+  [FIX D2] schedule_id=195 combo_id_2: None → 240
+
+============================================================
+全部修复已提交！
+============================================================

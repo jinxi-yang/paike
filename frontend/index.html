@@ -1261,11 +1261,13 @@
                         <label class="text-xs font-bold text-slate-600 mb-1 block">序号</label>
                         <input id="new-topic-seq" placeholder="自动分配" class="w-full text-sm p-2.5 border border-slate-200 rounded-xl text-center focus:ring-2 focus:ring-blue-100 outline-none transition-all" type="number" min="1" max="99">
                     </div>
+                    <!-- 先隐藏固定标识（保留代码，后续可恢复）
                     <div class="flex-1 flex items-end pb-1">
                         <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
                             <input type="checkbox" id="new-topic-fixed" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"> 固定课题 (首尾)
                         </label>
                     </div>
+                    -->
                 </div>
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-3 shrink-0">
@@ -2435,12 +2437,36 @@
             document.getElementById('add-project-modal').classList.remove('active');
         }
 
-        function openAddTopicModal() {
+        async function openAddTopicModal() {
             const pid = document.getElementById('topic-project-filter')?.value;
             if (!pid) { showToast('请先在课题管理中选择项目', 'warning'); return; }
             const sel = document.getElementById('topic-project-filter');
             const hint = document.getElementById('add-topic-project-hint');
             if (hint && sel) hint.textContent = sel.options[sel.selectedIndex]?.text || '';
+
+            // 新增默认是普通课题：序号可编辑
+            const seqInput = document.getElementById('new-topic-seq');
+            if (seqInput) {
+                seqInput.disabled = false;
+                seqInput.classList.remove('bg-slate-100', 'text-slate-400', 'cursor-not-allowed');
+                seqInput.title = '';
+            }
+
+            // 默认序号：当前项目最大序号 + 1（上限99）
+            try {
+                const resp = await fetch(`${API_BASE}/topics?project_id=${pid}`);
+                if (resp.ok) {
+                    const topics = await resp.json();
+                    // 默认忽略“其他”(is_other=true, 常为99)，避免新课题默认被带到99
+                    const normalTopics = topics.filter(t => !t.is_other);
+                    const maxSeq = normalTopics.reduce((m, t) => Math.max(m, parseInt(t.sequence) || 0), 0);
+                    const defaultSeq = Math.min(98, Math.max(1, maxSeq + 1));
+                    if (seqInput && !seqInput.value) seqInput.value = defaultSeq;
+                }
+            } catch (e) {
+                // 忽略，保留手动输入
+            }
+
             document.getElementById('add-topic-modal').classList.add('active');
             if (window.lucide) lucide.createIcons();
         }
@@ -2472,7 +2498,19 @@
             document.getElementById('add-city-modal').classList.remove('active');
         }
 
-                async function renderClassTopicsChecklist(projectId, containerId) {
+                function sortTopicsOtherLast(topics = []) {
+            return [...topics].sort((a, b) => {
+                const ao = a?.is_other ? 1 : 0;
+                const bo = b?.is_other ? 1 : 0;
+                if (ao !== bo) return ao - bo; // 其他放最后
+                const as = parseInt(a?.sequence) || 0;
+                const bs = parseInt(b?.sequence) || 0;
+                if (as !== bs) return as - bs;
+                return (a?.id || 0) - (b?.id || 0);
+            });
+        }
+
+        async function renderClassTopicsChecklist(projectId, containerId) {
             const wrapper = document.getElementById(containerId + '-wrapper');
             const container = document.getElementById(containerId);
             if (!projectId || !wrapper || !container) {
@@ -2488,7 +2526,8 @@
                 const project = await resp.json();
                 
                 if (project.topics && project.topics.length > 0) {
-                    container.innerHTML = project.topics.map(t => `
+                    const sortedTopics = sortTopicsOtherLast(project.topics);
+                    container.innerHTML = sortedTopics.map(t => `
                         <label class="flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded cursor-pointer transition-colors border border-transparent hover:border-slate-100">
                             <input type="checkbox" name="${containerId}-cb" value="${t.id}" ${t.is_other ? '' : 'checked'} class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer">
                             <span class="text-xs font-medium text-slate-700 select-none">${t.name}${t.is_other ? ' <span class="text-[9px] text-slate-400">(可重复)</span>' : ''}</span>
@@ -2866,10 +2905,13 @@
                 document.getElementById('init-start-date').value = lastSat.toISOString().split('T')[0];
             }
 
+            const sortedInitTopics = sortTopicsOtherLast(data.topics || []);
+            _initTopicsData = sortedInitTopics;
+
             // Populate the "Add Topic" dropdown（过滤已排课的非其他课题）
             const addTopicSelect = document.getElementById('init-add-topic-select');
             addTopicSelect.innerHTML = '<option value="">-- 选择附加课题 --</option>' + 
-                data.topics.map((t, i) => {
+                sortedInitTopics.map((t, i) => {
                     const hasSchedule = t.existing_schedules && t.existing_schedules.length > 0;
                     const isOther = t.is_other;
                     const isDisabled = hasSchedule && !isOther;
@@ -2881,7 +2923,7 @@
             let cardHtml = '';
             let gIdx = 0; // global card index
 
-            data.topics.forEach((t) => {
+            sortedInitTopics.forEach((t) => {
                 const schedules = (t.existing_schedules && t.existing_schedules.length > 0) ? t.existing_schedules : [null];
                 
                 schedules.forEach((existing) => {
@@ -2900,7 +2942,6 @@
                                 <span class="drag-handle cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 text-lg flex-shrink-0 select-none" title="拖拽排序">⋮⋮</span>
                                 <span class="init-seq-badge w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${badgeClass}">${gIdx + 1}</span>
                                 <span class="flex-1 text-sm font-medium">${t.name}</span>
-                                ${t.is_fixed ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">固定</span>' : ''}
                                 ${statusBadge}
                                 ${delBtn}
                             </div>
@@ -3354,14 +3395,14 @@
 
         function renderTopics(topics) {
             const container = document.getElementById('topics-list');
-            container.innerHTML = topics.map(t => `
+            const sortedTopics = sortTopicsOtherLast(topics || []);
+            container.innerHTML = sortedTopics.map(t => `
                 <div class="bg-white border rounded-lg p-3 transition-all hover:shadow-md">
                     <div class="flex items-center justify-between cursor-pointer group" onclick="toggleComboList(${t.id})">
                         <div class="flex items-center gap-3">
                             <i id="combo-chevron-${t.id}" data-lucide="chevron-right" class="w-4 h-4 text-slate-400 transition-transform group-hover:text-blue-500"></i>
                             <div>
                                 <div class="font-bold text-slate-700 text-sm group-hover:text-blue-600 transition-colors">${t.name}</div>
-                                ${t.is_fixed ? '<span class="text-[9px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded">固定课题</span>' : ''}
                             </div>
                         </div>
                         <div class="flex items-center gap-3">
@@ -3724,17 +3765,21 @@
                     const hasConflict = s.conflict_type != null;
                     const isMerged = s.merged_with || (s.notes && (s.notes.includes('合班主记录') || s.notes.includes('合班至') || s.notes.includes('合班:')));
 
-                    const day1Teacher = s.combo ? s.combo.teacher_name : '待定';
-                    const day1Course = s.combo ? s.combo.course_name : '';
-                    const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : '待定';
-                    const day2Course = s.combo_2 ? s.combo_2.course_name : '';
+                    const day1Teacher = s.combo ? s.combo.teacher_name : (s.combo_id ? `组合#${s.combo_id}(已失效)` : '待定(无组合)');
+                    const day1Course = s.combo ? s.combo.course_name : (s.combo_id ? '组合记录不存在' : '');
+                    const day2Teacher = s.combo_2 ? s.combo_2.teacher_name : (s.combo_id_2 ? `组合#${s.combo_id_2}(已失效)` : '待定(无组合)');
+                    const day2Course = s.combo_2 ? s.combo_2.course_name : (s.combo_id_2 ? '组合记录不存在' : '');
+                    const d1TopicMismatch = !!(s.combo && s.topic_id && s.combo.topic_id && s.combo.topic_id !== s.topic_id);
+                    const d2TopicMismatch = !!(s.combo_2 && s.topic_id && s.combo_2.topic_id && s.combo_2.topic_id !== s.topic_id);
+                    const d1ComboBroken = !!(s.combo_id && !s.combo);
+                    const d2ComboBroken = !!(s.combo_id_2 && !s.combo_2);
                     const sameDate = schedules.filter(x => x.id !== s.id && !x.merged_with && x.scheduled_date === s.scheduled_date);
                     const d1Conflict = day1Teacher !== '待定' && sameDate.find(x => x.combo && x.combo.teacher_name === day1Teacher);
                     const d2Conflict = day2Teacher !== '待定' && sameDate.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : null; return t === day2Teacher; });
                     const hrName = s.homeroom_name || '未分配';
                     const hrSameDate = sameDate.filter(x => x.homeroom_name === hrName);
                     const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
-                    const hasAnyConflict = hasConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                    const hasAnyConflict = hasConflict || !!d1Conflict || !!d2Conflict || hrConflict || d1TopicMismatch || d2TopicMismatch || d1ComboBroken || d2ComboBroken;
                     const progress = (s.week_number !== null && s.week_number !== undefined) ? `${s.week_number}/${s.total_topics || '-'}` : '';
 
                     // 行样式
@@ -3784,8 +3829,8 @@
                     return `<tr class="${rowClass}" draggable="${!isPast}" data-schedule-id="${s.id}">
                         <td style="white-space:nowrap;">${dateStr}(${dWeek})~${sunStr}(${sunWeek})</td>
                         <td title="${s.display_topic_name || s.topic_name || ''}">${s.display_topic_name || s.topic_name || '—'}${mergedBadge}</td>
-                        <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span>${d1BadgeHtml}</td>
-                        <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span>${d2BadgeHtml}</td>
+                        <td><span style="font-weight:600;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}${d1TopicMismatch ? '⚠️' : ''}${d1ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d1ComboBroken ? ('组合ID=' + s.combo_id + ' 已失效') : (d1TopicMismatch ? ('当前课题: ' + (s.topic_name || '未命名') + '；组合课题: ' + (s.combo?.topic_name || '未知课题')) : '')}">${day1Course}${d1ComboBroken ? '（组合已失效）' : (d1TopicMismatch ? `（课题不匹配: ${(s.combo?.topic_name || '未知课题')}）` : '')}</span>${d1BadgeHtml}</td>
+                        <td><span style="font-weight:600;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}${d2TopicMismatch ? '⚠️' : ''}${d2ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d2ComboBroken ? ('组合ID=' + s.combo_id_2 + ' 已失效') : (d2TopicMismatch ? ('当前课题: ' + (s.topic_name || '未命名') + '；组合课题: ' + (s.combo_2?.topic_name || '未知课题')) : '')}">${day2Course}${d2ComboBroken ? '（组合已失效）' : (d2TopicMismatch ? `（课题不匹配: ${(s.combo_2?.topic_name || '未知课题')}）` : '')}</span>${d2BadgeHtml}</td>
                         <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
                         <td><span style="font-size:10px;color:#7c3aed;">${s.location_name || s.city_name || '未设置'}</span></td>
                         <td>${statusText}</td>
@@ -4195,28 +4240,28 @@
         }
 
         function buildConflictAssistHtml(sch, isPast, frontendConflicts) {
-            const hasDbConflict = sch.conflict_type != null;
             const fc = frontendConflicts || {};
-            const hasFrontendConflict = !!fc.d1Conflict || !!fc.d2Conflict || !!fc.hrConflict;
-            if (!hasDbConflict && !hasFrontendConflict) return '';
+            const parts = [];
 
-            let reason = '';
             if (sch.conflict_type) {
                 const typeMap = { 'homeroom': '班主任冲突', 'teacher': '讲师冲突', 'holiday': '节假日冲突', 'classroom': '教室冲突', 'other': '其他冲突' };
-                reason = typeMap[sch.conflict_type] || sch.conflict_type;
-                if (sch.notes && !sch.notes.includes('合班')) reason += '：' + sch.notes;
-            } else if (hasFrontendConflict) {
-                const parts = [];
-                if (fc.d1Conflict) parts.push(`第一天讲师与${fc.d1Conflict.class_name || '?'}冲突`);
-                if (fc.d2Conflict) parts.push(`第二天讲师与${fc.d2Conflict.class_name || '?'}冲突`);
-                if (fc.hrConflict) parts.push(`班主任与${fc.hrConflictName || '?'}冲突`);
-                reason = parts.join('；');
-            } else {
-                reason = sch.notes || '存在冲突';
+                let dbReason = typeMap[sch.conflict_type] || sch.conflict_type;
+                if (sch.notes && !sch.notes.includes('合班')) dbReason += '：' + sch.notes;
+                parts.push(dbReason);
             }
-            // 返回紧凑的 title 文本（调用方放到 <tr> 的 title 属性中）
-            // 同时返回一个小图标用于行内显示（不占额外空间）
-            return reason;
+
+            if (fc.d1Conflict) parts.push(`第一天讲师与${fc.d1Conflict.class_name || '?'}冲突`);
+            if (fc.d2Conflict) parts.push(`第二天讲师与${fc.d2Conflict.class_name || '?'}冲突`);
+            if (fc.hrConflict) parts.push(`班主任与${fc.hrConflictName || '?'}冲突`);
+            if (fc.d1TopicMismatch) parts.push(`第一天讲师/课程与当前课题不匹配（当前：${sch.topic_name || '未命名'}，组合：${sch.combo?.topic_name || '未知课题'}）`);
+            if (fc.d2TopicMismatch) parts.push(`第二天讲师/课程与当前课题不匹配（当前：${sch.topic_name || '未命名'}，组合：${sch.combo_2?.topic_name || '未知课题'}）`);
+            if (fc.d1ComboBroken) parts.push(`第一天组合ID=${sch.combo_id}已失效（组合记录不存在）`);
+            if (fc.d2ComboBroken) parts.push(`第二天组合ID=${sch.combo_id_2}已失效（组合记录不存在）`);
+            if (fc.d1ComboBroken) parts.push(`第一天组合ID=${sch.combo_id}已失效（记录存在但组合被删除）`);
+            if (fc.d2ComboBroken) parts.push(`第二天组合ID=${sch.combo_id_2}已失效（记录存在但组合被删除）`);
+
+            if (!parts.length) return '';
+            return parts.join('；');
         }
 
         async function postponeConflictByWeek(scheduleId, dateStr) {
@@ -4372,10 +4417,14 @@
                         }
 
                         // 前端实时冲突检测
-                        const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                        const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
-                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
+                        const day1Teacher = sch.combo ? sch.combo.teacher_name : (sch.combo_id ? `组合#${sch.combo_id}(已失效)` : '待定');
+                        const day1Course = sch.combo ? sch.combo.course_name : (sch.combo_id ? '组合记录不存在' : '待定');
+                        const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo_id_2 ? `组合#${sch.combo_id_2}(已失效)` : '待定');
+                        const day2Course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo_id_2 ? '组合记录不存在' : '待定');
+                        const d1TopicMismatch = !!(sch.combo && sch.topic_id && sch.combo.topic_id && sch.combo.topic_id !== sch.topic_id);
+                        const d2TopicMismatch = !!(sch.combo_2 && sch.topic_id && sch.combo_2.topic_id && sch.combo_2.topic_id !== sch.topic_id);
+                        const d1ComboBroken = !!(sch.combo_id && !sch.combo);
+                        const d2ComboBroken = !!(sch.combo_id_2 && !sch.combo_2);
                         const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
                         const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
                         const d2Conflict = day2Teacher !== '待定' && others.find(x => {
@@ -4406,7 +4455,7 @@
                         }
 
                         // 硬冲突 vs 软警告
-                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                        const hasHardConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict || d1TopicMismatch || d2TopicMismatch || d1ComboBroken || d2ComboBroken;
                         const hasSoftWarning = hrGapWarning;
 
                         // 行样式：硬冲突红色，软警告橙色
@@ -4428,8 +4477,8 @@
                                     items: mergedSchList.map(ms => ({
                                         id: ms.id, name: ms.class_name || '?',
                                         t1: ms.combo ? ms.combo.teacher_name : '待定', c1: ms.combo ? ms.combo.course_name : '待定',
-                                        t2: ms.combo_2 ? ms.combo_2.teacher_name : (ms.combo ? ms.combo.teacher_name : '待定'),
-                                        c2: ms.combo_2 ? ms.combo_2.course_name : (ms.combo ? ms.combo.course_name : '待定'),
+                                        t2: ms.combo_2 ? ms.combo_2.teacher_name : '待定',
+                                        c2: ms.combo_2 ? ms.combo_2.course_name : '待定',
                                         hr: ms.homeroom_name || '未分配'
                                     })), mainId: sch.id
                                 };
@@ -4485,7 +4534,7 @@
                         }
 
                         const conflictAssistHtml = buildConflictAssistHtml(sch, isPast, {
-                            d1Conflict, d2Conflict, hrConflict,
+                            d1Conflict, d2Conflict, hrConflict, d1TopicMismatch, d2TopicMismatch, d1ComboBroken, d2ComboBroken,
                             hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
                         });
 
@@ -4495,8 +4544,8 @@
                         html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
                             <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
                             <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
-                            <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
-                            <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
+                            <td><span style="font-weight:600;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}${d1TopicMismatch ? '⚠️' : ''}${d1ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d1ComboBroken ? ('组合ID=' + sch.combo_id + ' 已失效') : (d1TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo?.topic_name || '未知课题')) : '')}">${day1Course}${d1ComboBroken ? '（组合已失效）' : (d1TopicMismatch ? `（课题不匹配: ${(sch.combo?.topic_name || '未知课题')}）` : '')}</span></td>
+                            <td><span style="font-weight:600;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}${d2TopicMismatch ? '⚠️' : ''}${d2ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d2ComboBroken ? ('组合ID=' + sch.combo_id_2 + ' 已失效') : (d2TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo_2?.topic_name || '未知课题')) : '')}">${day2Course}${d2ComboBroken ? '（组合已失效）' : (d2TopicMismatch ? `（课题不匹配: ${(sch.combo_2?.topic_name || '未知课题')}）` : '')}</span></td>
                             <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : hrGapWarning ? 'color:#ea580c;' : ''}" ${hrGapWarning ? `title="${hrGapDetail}"` : ''}>${hrName}${hrConflict ? '🔴' : hrGapWarning ? '⚠️' : ''}</td>
                             <td><span style="font-size:10px;color:#7c3aed;">${_locName || sch.city_name || '未设置'}</span></td>
                             <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
@@ -4734,10 +4783,14 @@
                     }
 
                     // 冲突检测
-                    const day1Teacher = sch.combo ? sch.combo.teacher_name : '待定';
-                    const day1Course = sch.combo ? sch.combo.course_name : '待定';
-                    const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
-                    const day2Course = sch.combo_2 ? sch.combo_2.course_name : '待定';
+                    const day1Teacher = sch.combo ? sch.combo.teacher_name : (sch.combo_id ? `组合#${sch.combo_id}(已失效)` : '待定');
+                    const day1Course = sch.combo ? sch.combo.course_name : (sch.combo_id ? '组合记录不存在' : '待定');
+                    const day2Teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo_id_2 ? `组合#${sch.combo_id_2}(已失效)` : '待定');
+                    const day2Course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo_id_2 ? '组合记录不存在' : '待定');
+                    const d1TopicMismatch = !!(sch.combo && sch.topic_id && sch.combo.topic_id && sch.combo.topic_id !== sch.topic_id);
+                    const d2TopicMismatch = !!(sch.combo_2 && sch.topic_id && sch.combo_2.topic_id && sch.combo_2.topic_id !== sch.topic_id);
+                    const d1ComboBroken = !!(sch.combo_id && !sch.combo);
+                    const d2ComboBroken = !!(sch.combo_id_2 && !sch.combo_2);
                     const others = w.schedules.filter(x => x.id !== sch.id && !x.merged_with);
                     const d1Conflict = day1Teacher !== '待定' && others.find(x => x.combo && x.combo.teacher_name === day1Teacher);
                     const d2Conflict = day2Teacher !== '待定' && others.find(x => { const t = x.combo_2 ? x.combo_2.teacher_name : null; return t === day2Teacher; });
@@ -4745,7 +4798,7 @@
                     const hrSameDate = others.filter(x => x.homeroom_name === hrName);
                     const hrConflict = hrName !== '未分配' && hrSameDate.length > 0;
                     const hasDbConflict = sch.conflict_type != null;
-                    const hasAnyConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict;
+                    const hasAnyConflict = hasDbConflict || !!d1Conflict || !!d2Conflict || hrConflict || d1TopicMismatch || d2TopicMismatch || d1ComboBroken || d2ComboBroken;
 
                     // 行样式
                     let rowClass = '';
@@ -4765,8 +4818,8 @@
                                 items: mergedSchList.map(ms => ({
                                     id: ms.id, name: ms.class_name || '?',
                                     t1: ms.combo ? ms.combo.teacher_name : '待定', c1: ms.combo ? ms.combo.course_name : '待定',
-                                    t2: ms.combo_2 ? ms.combo_2.teacher_name : (ms.combo ? ms.combo.teacher_name : '待定'),
-                                    c2: ms.combo_2 ? ms.combo_2.course_name : (ms.combo ? ms.combo.course_name : '待定'),
+                                    t2: ms.combo_2 ? ms.combo_2.teacher_name : '待定',
+                                    c2: ms.combo_2 ? ms.combo_2.course_name : '待定',
                                     hr: ms.homeroom_name || '未分配'
                                 })), mainId: sch.id
                             };
@@ -4821,7 +4874,7 @@
                     }
 
                     const conflictAssistHtml = buildConflictAssistHtml(sch, isPast, {
-                        d1Conflict, d2Conflict, hrConflict,
+                        d1Conflict, d2Conflict, hrConflict, d1TopicMismatch, d2TopicMismatch, d1ComboBroken, d2ComboBroken,
                         hrConflictName: hrSameDate.length > 0 ? hrSameDate[0].class_name : null
                     });
 
@@ -4831,8 +4884,8 @@
                     html += `<tr class="${rowClass}" ${conflictAssistHtml ? `title="${escapeHtml(conflictAssistHtml)}"` : ''} style="cursor:pointer;" onclick="${isMergeMode ? `toggleMergeSelect(${sch.id})` : `toggleRowEdit(${sch.id})`}">
                         <td title="${sch.class_name || ''}" style="font-weight:700;color:#1e293b;">${sch.class_name || '未命名'}${mergedBadge}</td>
                         <td title="${sch.display_topic_name || sch.topic_name || ''}">${sch.display_topic_name || sch.topic_name || '待定'}</td>
-                        <td><span style="font-weight:600;${d1Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d1Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day1Course}</span></td>
-                        <td><span style="font-weight:600;${d2Conflict ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}</span><br><span style="font-size:10px;${d2Conflict ? 'color:#f87171;' : 'color:#94a3b8;'}">${day2Course}</span></td>
+                        <td><span style="font-weight:600;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day1Teacher}${d1Conflict ? '⚠️' : ''}${d1TopicMismatch ? '⚠️' : ''}${d1ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d1Conflict || d1TopicMismatch || d1ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d1ComboBroken ? ('组合ID=' + sch.combo_id + ' 已失效') : (d1TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo?.topic_name || '未知课题')) : '')}">${day1Course}${d1ComboBroken ? '（组合已失效）' : (d1TopicMismatch ? `（课题不匹配: ${(sch.combo?.topic_name || '未知课题')}）` : '')}</span></td>
+                        <td><span style="font-weight:600;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#dc2626;' : 'color:#334155;'}">${day2Teacher}${d2Conflict ? '⚠️' : ''}${d2TopicMismatch ? '⚠️' : ''}${d2ComboBroken ? '⚠️' : ''}</span><br><span style="font-size:10px;${(d2Conflict || d2TopicMismatch || d2ComboBroken) ? 'color:#f87171;' : 'color:#94a3b8;'}" title="${d2ComboBroken ? ('组合ID=' + sch.combo_id_2 + ' 已失效') : (d2TopicMismatch ? ('当前课题: ' + (sch.topic_name || '未命名') + '；组合课题: ' + (sch.combo_2?.topic_name || '未知课题')) : '')}">${day2Course}${d2ComboBroken ? '（组合已失效）' : (d2TopicMismatch ? `（课题不匹配: ${(sch.combo_2?.topic_name || '未知课题')}）` : '')}</span></td>
                         <td style="${hrConflict ? 'color:#dc2626;font-weight:700;' : ''}">${hrName}${hrConflict ? '⚠️' : ''}</td>
                         <td><span style="font-size:10px;color:#7c3aed;">${_locName2 || sch.city_name || '未设置'}</span></td>
                         <td><span style="font-size:10px;">${isCompleted ? '✅' : ''} ${progress}</span><br>${intervalHtml}</td>
@@ -5147,8 +5200,8 @@
                 }).join('') || '<div class="text-xs text-slate-400">无</div>';
 
                 const sunItems = (w.schedules || []).map(sch => {
-                    const teacher = sch.combo_2 ? sch.combo_2.teacher_name : (sch.combo ? sch.combo.teacher_name : '待定');
-                    const course = sch.combo_2 ? sch.combo_2.course_name : (sch.combo ? sch.combo.course_name : '待定');
+                    const teacher = sch.combo_2 ? sch.combo_2.teacher_name : '待定';
+                    const course = sch.combo_2 ? sch.combo_2.course_name : '待定';
                     const topic = sch.display_topic_name || sch.topic_name || '';
                     return `<div class="text-xs text-slate-700 mb-1"><span class="font-semibold">${sch.class_name}</span>${topic ? ' <span class="text-slate-400">[' + topic + ']</span>' : ''} ${teacher} — ${course}</div>`;
                 }).join('') || '<div class="text-xs text-slate-400">无</div>';
@@ -5585,7 +5638,8 @@
                     fetch(`${API_BASE}/schedule/${scheduleId}/available-locations`),
                     fetch(`${API_BASE}/classes/${schedule.class_id}`)
                 ]);
-                const topics = await topicsResp.json();
+                const topicsRaw = await topicsResp.json();
+                const topics = sortTopicsOtherLast(topicsRaw || []);
                 window._allCachedCombos = await allCombosResp.json();
                 const homerooms = await hrResp.json();
                 const locData = await locResp.json();
@@ -5869,7 +5923,8 @@
                     .sort();
                 
                 const topicsResp = await fetch(`${API_BASE}/topics?project_id=${clsData.project_id}`);
-                const topics = await topicsResp.json();
+                const topicsRaw = await topicsResp.json();
+                const topics = sortTopicsOtherLast(topicsRaw || []);
                 if(!topics || !topics.length) {
                     showToast('该班级所属项目没有课题可供排课', 'warning');
                     return;
@@ -6705,12 +6760,12 @@
                 const resp = await fetch(`${API_BASE}/topics?project_id=${pid}&include_combos=true`);
                 if (!resp.ok) return;
                 const topics = await resp.json();
+                const sortedTopics = sortTopicsOtherLast(topics);
 
-
-                document.getElementById('topic-count').textContent = `共 ${topics.length} 个课题`;
+                document.getElementById('topic-count').textContent = `共 ${sortedTopics.length} 个课题`;
                 
                 let html = '';
-                topics.forEach(t => {
+                sortedTopics.forEach(t => {
                     const combos = t.combos || [];
                     
                     const teacherMap = {};
@@ -6755,13 +6810,17 @@
                     `).join('');
 
                     html += `
-                        <div class="mb-3 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:border-blue-300 transition-colors">
+                        <div class="mb-3 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:border-blue-300 transition-colors draggable ${t.is_other ? 'opacity-95' : ''}" draggable="${t.is_other ? 'false' : 'true'}" data-topic-id="${t.id}" data-is-other="${t.is_other ? '1' : '0'}">
                             <div id="topic-header-${t.id}" class="flex items-center justify-between p-3.5 bg-slate-50/50">
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <span class="${t.is_other ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-slate-500 cursor-grab'} select-none text-lg" title="${t.is_other ? '“其他”课题固定为99，不可拖拽' : '拖拽调整顺序'}">⋮⋮</span>
+                                    <div class="w-7 h-7 rounded-lg bg-indigo-500 text-white text-xs font-bold flex items-center justify-center">${t.sequence || '-'}</div>
                                     <div class="flex flex-col flex-1 min-w-0">
                                         <div class="flex items-center gap-2">
                                             <span class="font-bold text-slate-700 text-sm truncate">${t.name}</span>
+                                            <!-- 先隐藏固定标识（保留代码，后续可恢复）
                                             ${t.is_fixed ? '<span class="px-1.5 py-[2px] bg-amber-100 text-amber-600 text-[9px] rounded font-bold uppercase shrink-0">固定</span>' : ''}
+                                            -->
                                         </div>
                                     </div>
                                 </div>
@@ -6817,6 +6876,7 @@
                 });
                 if (!html) html = '<div class="text-center text-slate-400 text-xs mt-4">暂无课题</div>';
                 document.getElementById('topics-manage-list').innerHTML = html;
+                initTopicManageDragDrop();
 
                 // 异步加载可选讲师来填充下拉框
                 fetch(`${API_BASE}/teachers`).then(r => r.json()).then(allTeachers => {
@@ -7163,12 +7223,85 @@
             } catch (e) { showToast('删除失败', 'error'); }
         }
 
+        function initTopicManageDragDrop() {
+            const container = document.getElementById('topics-manage-list');
+            if (!container) return;
+            let dragItem = null;
+
+            container.querySelectorAll('.draggable[data-topic-id]').forEach(card => {
+                if (card.dataset.isOther === '1') return; // “其他”固定99，不参与拖拽
+                card.addEventListener('dragstart', (e) => {
+                    dragItem = card;
+                    card.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                card.addEventListener('dragend', () => {
+                    card.classList.remove('dragging');
+                    dragItem = null;
+                    container.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('drag-over'));
+                });
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                });
+                card.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    if (!dragItem || dragItem === card) return;
+                    const allCards = [...container.querySelectorAll('.draggable[data-topic-id]')];
+                    const dragIdx = allCards.indexOf(dragItem);
+                    const dropIdx = allCards.indexOf(card);
+                    if (dragIdx < dropIdx) {
+                        container.insertBefore(dragItem, card.nextSibling);
+                    } else {
+                        container.insertBefore(dragItem, card);
+                    }
+                    await saveTopicOrder();
+                });
+            });
+        }
+
+        async function saveTopicOrder() {
+            const projectId = document.getElementById('topic-project-filter')?.value;
+            if (!projectId) return;
+
+            // 前后端统一：一次请求，始终提交当前列表全量顺序
+            const topicIds = [...document.querySelectorAll('#topics-manage-list .draggable[data-topic-id]')]
+                .map(el => parseInt(el.dataset.topicId));
+            if (!topicIds.length) return;
+
+            try {
+                const resp = await fetch(`${API_BASE}/topics/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: parseInt(projectId), topic_ids: topicIds })
+                });
+                const result = await resp.json().catch(() => ({}));
+
+                if (!resp.ok) {
+                    showToast(result.error || '排序保存失败', 'error');
+                    await loadTopics();
+                    return;
+                }
+
+                await loadTopics();
+                showToast('课题顺序已更新');
+            } catch (e) {
+                showToast('排序保存失败', 'error');
+                await loadTopics();
+            }
+        }
+
         function editTopic(id, t) {
+            const isOther = !!t.is_other;
             document.getElementById(`topic-header-${id}`).innerHTML = `
                 <div class="flex items-center gap-2 flex-1">
-                    <input id="edit-tp-seq-${id}" value="${t.sequence || ''}" class="w-12 text-xs p-1.5 border rounded text-center" type="number" min="1">
+                    <input id="edit-tp-seq-${id}" value="${t.sequence || ''}" class="w-12 text-xs p-1.5 border rounded text-center ${isOther ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}" type="number" min="1" ${isOther ? 'disabled' : ''}>
                     <input id="edit-tp-name-${id}" value="${t.name || ''}" class="flex-1 text-sm p-1.5 border rounded" placeholder="课题名称">
+                    <input id="edit-tp-is-other-${id}" type="hidden" value="${isOther ? '1' : '0'}">
+                    ${isOther ? '<span class="text-[10px] text-amber-600">“其他”序号固定为99</span>' : ''}
+                    <!-- 先隐藏固定标识（保留代码，后续可恢复）
                     <label class="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap"><input id="edit-tp-fixed-${id}" type="checkbox" ${t.is_fixed ? 'checked' : ''}> 固定</label>
+                    -->
                 </div>
                 <div class="flex items-center gap-2 ml-4">
                     <button onclick="saveEditTopic(${id})" class="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors">保存</button>
@@ -7179,12 +7312,18 @@
         async function saveEditTopic(id) {
             const name = document.getElementById(`edit-tp-name-${id}`).value.trim();
             if (!name) { showToast('课题名称不能为空', 'warning'); return; }
+            const isOther = document.getElementById(`edit-tp-is-other-${id}`)?.value === '1';
+            const seq = isOther ? 99 : (parseInt(document.getElementById(`edit-tp-seq-${id}`).value) || 1);
+            if (!isOther && seq === 99) {
+                showToast('提示：序号 99 建议保留给“其他”课题', 'warning');
+            }
             await fetch(`${API_BASE}/topics/${id}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
-                    sequence: parseInt(document.getElementById(`edit-tp-seq-${id}`).value) || 1,
-                    is_fixed: document.getElementById(`edit-tp-fixed-${id}`).checked
+                    sequence: seq
+                    // 先隐藏固定标识（保留参数位，后续可恢复）
+                    // is_fixed: document.getElementById(`edit-tp-fixed-${id}`)?.checked || false
                 })
             });
             loadTopics();
@@ -7197,16 +7336,16 @@
             const name = document.getElementById('new-topic-name').value.trim();
             if (!name) { document.getElementById('new-topic-name').style.borderColor = 'red'; return; }
             const seq = document.getElementById('new-topic-seq').value;
-            const isFixed = document.getElementById('new-topic-fixed').checked;
+            // 先隐藏固定标识（保留参数位，后续可恢复）
+            // const isFixed = document.getElementById('new-topic-fixed')?.checked || false;
             const resp = await fetch(`${API_BASE}/topics`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_id: parseInt(projectId), name, sequence: seq ? parseInt(seq) : 1, is_fixed: isFixed })
+                body: JSON.stringify({ project_id: parseInt(projectId), name, sequence: seq ? parseInt(seq) : 1 })
             });
             if (resp.ok) {
                 document.getElementById('new-topic-name').value = '';
                 document.getElementById('new-topic-name').style.borderColor = '';
                 document.getElementById('new-topic-seq').value = '';
-                document.getElementById('new-topic-fixed').checked = false;
                 closeAddTopicModal();
                 loadTopics();
                 showToast('课题已添加');
@@ -7583,7 +7722,7 @@
                                 const tgt = assignments.find(x => x.class_id === m.target_class_id);
                                 return { id: 0, name: tgt ? tgt.class_name : (m.target_class_name || '?'),
                                     t1: tgt ? (tgt.combo1_teacher_name || '待定') : '待定', c1: tgt ? (tgt.combo1_course_name || '待定') : '待定',
-                                    t2: tgt ? (tgt.combo2_teacher_name || tgt.combo1_teacher_name || '待定') : '待定', c2: tgt ? (tgt.combo2_course_name || tgt.combo1_course_name || '待定') : '待定',
+                                    t2: tgt ? (tgt.combo2_teacher_name || '待定') : '待定', c2: tgt ? (tgt.combo2_course_name || '待定') : '待定',
                                     hr: tgt ? (tgt.homeroom_name || '未分配') : '未分配' };
                             });
                             if (!window._mergePopupData) window._mergePopupData = {};
@@ -7596,8 +7735,8 @@
                         // 讲师显示
                         const day1Display = a.combo1_teacher_name || '待定';
                         const day1Course = a.combo1_course_name || '';
-                        const day2Display = a.combo2_teacher_name || a.combo1_teacher_name || '待定';
-                        const day2Course = a.combo2_course_name || a.combo1_course_name || '';
+                        const day2Display = a.combo2_teacher_name || '待定';
+                        const day2Course = a.combo2_course_name || '';
                         const hrDisplay = a.homeroom_name || '未分配';
 
                         // 日期显示
@@ -7796,8 +7935,8 @@
                     const dDateStr = dDate ? `${dDate.getMonth()+1}/${dDate.getDate()}` : '待定';
                     const day1 = a.combo1_teacher_name || '待定';
                     const day1C = a.combo1_course_name || '';
-                    const day2 = a.combo2_teacher_name || a.combo1_teacher_name || '待定';
-                    const day2C = a.combo2_course_name || a.combo1_course_name || '';
+                    const day2 = a.combo2_teacher_name || '待定';
+                    const day2C = a.combo2_course_name || '';
                     const hr = a.homeroom_name || '未分配';
                     const loc = a.location_name || a.city_name || '';
                     const interval = a.interval_days;

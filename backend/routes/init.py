@@ -16,7 +16,7 @@ def class_status(class_id):
     project = Project.query.get(cls.project_id)
     
     # 获取该项目的所有课题（按序号排列）
-    topics = Topic.query.filter_by(project_id=cls.project_id).order_by(Topic.id).all()
+    topics = Topic.query.filter_by(project_id=cls.project_id).order_by(Topic.sequence.asc(), Topic.id.asc()).all()
     
     # #21: 删除重复的状态自动转换，统一由 classes.py 的 sync_class_statuses 处理
     # （GET classes 列表时已自动触发 sync_class_statuses）
@@ -36,7 +36,7 @@ def class_status(class_id):
     # 构建课题列表（含combo选项 + 已有排课信息）
     topic_list = []
     for t in topics:
-        combos = TeacherCourseCombo.query.filter_by(topic_id=t.id).all()
+        combos = TeacherCourseCombo.query.filter(TeacherCourseCombo.topic_id==t.id, TeacherCourseCombo.course_name != '待定').all()
         topic_data = t.to_dict()
         topic_data['combos'] = [c.to_dict() for c in combos]
         topic_data['existing_schedules'] = existing_map.get(t.id, [])

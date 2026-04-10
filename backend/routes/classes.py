@@ -245,6 +245,9 @@ def create():
     result = None
     if auto_generate and c.start_date and c.project_id:
         result = auto_schedule_class(c, selected_topic_ids)
+        if result.get('error'):
+            db.session.rollback()
+            return jsonify({'error': result['error']}), 400
         for s in result['schedules']:
             db.session.add(s)
         db.session.flush()
@@ -401,6 +404,9 @@ def regenerate_schedule(id):
     result = None
     if c.start_date and c.project_id:
         result = auto_schedule_class(c)
+        if result.get('error'):
+            db.session.rollback()
+            return jsonify({'error': result['error']}), 400
         for s in result['schedules']:
             db.session.add(s)
         db.session.flush()
@@ -613,7 +619,7 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
     from datetime import date as date_type
     
     topics = list(Topic.query.filter_by(project_id=class_obj.project_id)
-                       .order_by(Topic.id).all())
+                       .order_by(Topic.sequence.asc(), Topic.id.asc()).all())
     # 灵活课题：如果指定了选中的课题，只排选中的
     if selected_topic_ids:
         topics = [t for t in topics if t.id in selected_topic_ids]
@@ -623,18 +629,14 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
                 'conflicts': [], 'topic_swaps': [], 'skipped_topics': 0}
     
     today = date_type.today()
-    
+
     schedules = []
     conflicts = []
-    current_date = class_obj.start_date
-    
-    # 确保从周六开始
-    current_date = find_next_available_saturday(current_date)
-    
-    for i in range(len(topics)):
-        topic = topics[i]
-        
-        # 查找可用的周六（避开节假日）
+
+    # 先生成课次档期槽位（第1节、第2节...）
+    slot_dates = []
+    current_date = find_next_available_saturday(class_obj.start_date)
+    for _ in range(len(topics)):
         scheduled_date = current_date
         max_attempts = 10
         attempts = 0
@@ -643,22 +645,70 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
                 break
             scheduled_date = scheduled_date + timedelta(days=7)
             attempts += 1
-        
+        slot_dates.append(scheduled_date)
+
+        ideal_next = scheduled_date + timedelta(days=Config.TARGET_INTERVAL_DAYS)
+        current_date = find_next_available_saturday(ideal_next)
+        if current_date.year == scheduled_date.year and current_date.month == scheduled_date.month:
+            if scheduled_date.month == 12:
+                next_month_1st = date_type(scheduled_date.year + 1, 1, 1)
+            else:
+                next_month_1st = date_type(scheduled_date.year, scheduled_date.month + 1, 1)
+            current_date = find_next_available_saturday(next_month_1st)
+        if (current_date - scheduled_date).days > getattr(Config, 'MAX_INTERVAL_DAYS', 42):
+            earlier = current_date - timedelta(days=7)
+            if earlier > scheduled_date and not is_holiday(earlier) \
+               and not (earlier.year == scheduled_date.year and earlier.month == scheduled_date.month):
+                current_date = earlier
+
+    # 固定课题为硬约束：sequence + is_fixed 必须落在对应课次
+    slots = [None] * len(topics)
+    fixed_seen = {}
+    non_fixed_topics = []
+    for topic in topics:
+        if topic.is_fixed:
+            seq = int(topic.sequence or 0)
+            if seq <= 0 or seq > len(topics):
+                return {
+                    'error': f'固定课题「{topic.name}」序号 {seq} 超出范围（1~{len(topics)}）',
+                    'schedules': [], 'total': 0, 'conflict_count': 0,
+                    'conflicts': [], 'topic_swaps': [], 'skipped_topics': 0
+                }
+            if seq in fixed_seen:
+                return {
+                    'error': f'固定课题冲突：课次第{seq}节同时被「{fixed_seen[seq]}」和「{topic.name}」占用，请先调整后再排课',
+                    'schedules': [], 'total': 0, 'conflict_count': 0,
+                    'conflicts': [], 'topic_swaps': [], 'skipped_topics': 0
+                }
+            fixed_seen[seq] = topic.name
+            slots[seq - 1] = topic
+        else:
+            non_fixed_topics.append(topic)
+
+    non_fixed_idx = 0
+    for i in range(len(slots)):
+        if slots[i] is None:
+            slots[i] = non_fixed_topics[non_fixed_idx]
+            non_fixed_idx += 1
+
+    for i, topic in enumerate(slots):
+        scheduled_date = slot_dates[i]
+
         # 判断状态：过去的为 completed，未来为 scheduled
         if scheduled_date < today:
             record_status = 'completed'
         else:
             record_status = 'scheduled'
-        
+
         # 获取当天已占用资源
         occupied_teachers = _get_occupied_teachers(scheduled_date)
         homeroom_conflict = _check_homeroom_conflict(
             class_obj.homeroom_id, scheduled_date, class_obj.id
         )
-        
+
         # 找最佳 combo（周六讲师）
         combo, combo_conflict = _find_best_combo(topic.id, scheduled_date, occupied_teachers)
-        
+
         # 找 combo2（周日讲师，选不同讲师的组合）
         combo2 = None
         all_combos = TeacherCourseCombo.query.filter_by(topic_id=topic.id)\
@@ -670,12 +720,12 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
                     break
             if not combo2:
                 combo2 = combo  # 只有一个讲师则复用
-        
+
         # 冲突检查（已过去的日期不标冲突）
         has_conflict = False
         if record_status != 'completed':
             has_conflict = combo_conflict is not None or homeroom_conflict
-        
+
         if has_conflict:
             conflict_reasons = []
             conflict_type = None
@@ -692,18 +742,18 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
                 conflict_reasons.append(f'讲师 {combo.teacher.name} 撞课')
                 if not conflict_type:
                     conflict_type = 'teacher'
-            
+
             note = '; '.join(conflict_reasons)
             conflicts.append({
                 'topic': topic.name, 'date': scheduled_date.isoformat(),
                 'type': conflict_type, 'detail': note
             })
-            final_status = record_status  # 状态只管生命周期，冲突通过 conflict_type 标记
+            final_status = record_status
         else:
             final_status = record_status
             note = None
             conflict_type = None
-        
+
         schedule = ClassSchedule(
             class_id=class_obj.id,
             topic_id=topic.id,
@@ -716,28 +766,10 @@ def auto_schedule_class(class_obj, selected_topic_ids=None):
             notes=note,
             has_opening=(i == 0),
             has_team_building=(i == 0),
-            has_closing=(i == len(topics) - 1),
+            has_closing=(i == len(slots) - 1),
             location_id=class_obj.city_id
         )
         schedules.append(schedule)
-        
-        # 下一个日期
-        ideal_next = scheduled_date + timedelta(days=Config.TARGET_INTERVAL_DAYS)
-        current_date = find_next_available_saturday(ideal_next)
-        
-        # 同月检测：如果和本次课在同一日历月，推到下个月第一个可用周六
-        if current_date.year == scheduled_date.year and current_date.month == scheduled_date.month:
-            if scheduled_date.month == 12:
-                next_month_1st = date_type(scheduled_date.year + 1, 1, 1)
-            else:
-                next_month_1st = date_type(scheduled_date.year, scheduled_date.month + 1, 1)
-            current_date = find_next_available_saturday(next_month_1st)
-            
-        if (current_date - scheduled_date).days > getattr(Config, 'MAX_INTERVAL_DAYS', 42):
-            earlier = current_date - timedelta(days=7)
-            if earlier > scheduled_date and not is_holiday(earlier) \
-               and not (earlier.year == scheduled_date.year and earlier.month == scheduled_date.month):
-                current_date = earlier
     
     return {
         'schedules': schedules,

@@ -2357,27 +2357,14 @@ def _cleanup_stale_scheduled_records():
 
 
 def _resequence_topics_by_date(class_id):
-    """按排课日期重排课题的 sequence，确保序号和时间顺序一致。
-    并在同时计算每个课次的实际上课顺序 (week_number)。
-    在任何修改了排课日期的操作后调用。
+    """按排课日期重排课次 week_number（不再改课题 sequence）。
+    课题 sequence 是项目级资源顺序，不应被班级课表日期重排覆盖。
     """
     schedules = ClassSchedule.query.filter_by(class_id=class_id)\
         .filter(ClassSchedule.scheduled_date.isnot(None))\
         .filter(db.or_(ClassSchedule.status != 'cancelled', ClassSchedule.status.is_(None)))\
         .order_by(ClassSchedule.scheduled_date).all()
-    seen_topics = []
     changed = False
-
-    # 更新课题 sequence
-    for s in schedules:
-        if s.topic_id and s.topic_id not in seen_topics:
-            seen_topics.append(s.topic_id)
-    if seen_topics:
-        for i, tid in enumerate(seen_topics):
-            topic = Topic.query.get(tid)
-            if topic and topic.sequence != i + 1:
-                topic.sequence = i + 1
-                changed = True
 
     # 更新排课记录实际上课顺序 (week_number)
     # 对于合班记录(merged_with)，其周次顺序跟主记录独立，它相当于本班级自己的第N次课
@@ -2438,8 +2425,10 @@ def _optimize_combos_per_day(assignments, constraints, precomputed=None):
     # 兜底：对 precomputed 中没有的 topic 从 DB 查
     for tid in topic_ids:
         if tid not in combos_by_topic:
-            combos_by_topic[tid] = TeacherCourseCombo.query.filter_by(topic_id=tid)\
-                .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
+            combos_by_topic[tid] = TeacherCourseCombo.query.filter(
+                TeacherCourseCombo.topic_id == tid,
+                TeacherCourseCombo.course_name != '待定'
+            ).order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
     
     # 建立 combo_id -> combo 对象的映射（用于冲突检查）
     combo_cache = {}  # {combo_id: combo_obj}
@@ -3702,9 +3691,10 @@ def _precompute_class_data(year, month, constraints, **kwargs):
         all_topics = list(cls.project.topics.order_by(Topic.sequence.asc()).all()) if cls.project else []
 
         # 科教组合
-        all_combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id)\
-            .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
-
+        all_combos = TeacherCourseCombo.query.filter(
+            TeacherCourseCombo.topic_id == next_topic.id,
+            TeacherCourseCombo.course_name != '待定'
+        ).order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
         cls_id_str = str(cid)
         user_co = combo_overrides.get(cls_id_str, {})
         skip_reason = None
@@ -3973,8 +3963,10 @@ def _run_scheduling_algorithm(year, month, constraints, conflict_mode='smart', o
                     break
             if not next_topic:
                 continue
-            all_combos = TeacherCourseCombo.query.filter_by(topic_id=next_topic.id)\
-                .order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
+            all_combos = TeacherCourseCombo.query.filter(
+                TeacherCourseCombo.topic_id == next_topic.id,
+                TeacherCourseCombo.course_name != '待定'
+            ).order_by(TeacherCourseCombo.priority.desc(), TeacherCourseCombo.id.desc()).all()
             cls_id_str = str(cls.id)
             user_co = combo_overrides.get(cls_id_str, {})
             skip_reason = None
